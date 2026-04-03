@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:/Users/Andre Hee/Desktop/SourceBuddy/Claude skills\")",
+      "Bash(mv \"C:/Users/Andre Hee/Desktop/SourceBuddy/download-main-csv.md\" \"C:/Users/Andre Hee/Desktop/SourceBuddy/Claude skills/\")",
+      "WebFetch(domain:download.companieshouse.gov.uk)",
+      "Bash(curl -L -o \"C:/Users/Andre Hee/Desktop/SourceBuddy/CompanyData/BasicCompanyData-part1_7.zip\" \"https://download.companieshouse.gov.uk/BasicCompanyData-2026-03-02-part1_7.zip\")",
+      "Bash(unzip -o \"CompanyData/BasicCompanyData-part1_7.zip\" -d CompanyData)",
+      "Bash(rm \"CompanyData/BasicCompanyData-part1_7.zip\")",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(python -c ':*)",
+      "Bash(python \"Data_Cleaning/\\(test\\)_upload_to_supabase.py\")",
+      "Bash(pip install:*)",
+      "Bash(nslookup db.inqwlidpatcqckvdqtcn.supabase.co)",
+      "Bash(python:*)"
+    ]
+  }
+}
