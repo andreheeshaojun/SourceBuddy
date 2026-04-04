@@ -1,123 +1,111 @@
+"""
+Upload FilteredCompanyData.csv to the Supabase `companies` table.
+
+Maps:  CompanyNumber  → company_number  (top-level column)
+       CompanyName    → company_name    (top-level column)
+       everything else → metadata JSONB
+
+Every row gets  metadata.pipeline.status = 'pending'.
+"""
+
+import json
 import pandas as pd
-import requests
 from supabase import create_client
 from dotenv import load_dotenv
 import os
-import re
 
-# Load API keys from config
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "config", "keys.env"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-# Read CSV and force everything to string
-df = pd.read_csv(os.path.join(os.path.dirname(__file__), "..", "CompanyData", "FilteredCompanyData.csv"), dtype=str)
+CSV_PATH = os.path.join(
+    os.path.dirname(__file__), "..", "CompanyData", "FilteredCompanyData.csv"
+)
+TABLE_NAME = "companies"
+BATCH_SIZE = 500
+
+# ---------------------------------------------------------------------------
+# Read CSV
+# ---------------------------------------------------------------------------
+df = pd.read_csv(CSV_PATH, dtype=str)
 df.columns = df.columns.str.strip()
-
-# Sanitize column names: dots/spaces to underscores, lowercase
-def clean_col(name):
-    name = name.strip().lower()
-    name = re.sub(r'[^a-z0-9_]', '_', name)
-    name = re.sub(r'_+', '_', name).strip('_')
-    return name
-
-col_mapping = {col: clean_col(col) for col in df.columns}
-df.rename(columns=col_mapping, inplace=True)
 df = df.fillna("").replace(["nan", "NaN", "None"], "")
 
-TABLE_NAME = "Raw CSV Data Test"
+# ---------------------------------------------------------------------------
+# Build rows for the new schema
+# ---------------------------------------------------------------------------
 
-# --- Step 1: Create the table via Supabase SQL endpoint ---
-print(f"Creating table '{TABLE_NAME}' if it doesn't exist...")
-
-columns_sql = ",\n  ".join([f'"{col}" text' for col in df.columns])
-create_sql = f"""
-CREATE TABLE IF NOT EXISTS public.{TABLE_NAME} (
-  id bigint generated always as identity primary key,
-  {columns_sql}
-);
-"""
-
-# Use the Supabase SQL API (requires service_role key)
-project_ref = SUPABASE_URL.split("//")[1].split(".")[0]
-sql_url = f"https://{project_ref}.supabase.co/rest/v1/rpc"
-
-# Try executing via pg endpoint
-headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type": "application/json",
+# CSV columns that map to metadata keys
+METADATA_MAP = {
+    "SICCode.SicText_1":            "sic_code_1",
+    "SICCode.SicText_2":            "sic_code_2",
+    "SICCode.SicText_3":            "sic_code_3",
+    "SICCode.SicText_4":            "sic_code_4",
+    "CompanyStatus":                "company_status",
+    "Accounts.AccountCategory":     "accounts_category",
+    "IncorporationDate":            "incorporation_date",
+    "RegAddress.PostCode":          "postcode",
+    "RegAddress.AddressLine1":      "address_line_1",
+    "RegAddress.AddressLine2":      "address_line_2",
+    "RegAddress.PostTown":          "post_town",
+    "RegAddress.County":            "county",
+    "RegAddress.Country":           "country",
+    "RegAddress.CareOf":            "care_of",
+    "RegAddress.POBox":             "po_box",
+    "CompanyCategory":              "company_category",
+    "CountryOfOrigin":              "country_of_origin",
+    "Accounts.AccountRefDay":       "account_ref_day",
+    "Accounts.AccountRefMonth":     "account_ref_month",
+    "Accounts.NextDueDate":         "accounts_next_due_date",
+    "Accounts.LastMadeUpDate":      "accounts_last_made_up_date",
 }
 
-# Attempt 1: Use the /query endpoint (Supabase Management API style)
-query_url = f"{SUPABASE_URL}/rest/v1/"
-resp = requests.post(
-    f"{SUPABASE_URL}/rest/v1/rpc/exec_sql",
-    headers=headers,
-    json={"query": create_sql}
-)
 
-if resp.status_code == 404:
-    # exec_sql function doesn't exist, try creating it first
-    print("exec_sql function not found. Creating helper function...")
-    bootstrap_sql = """
-    CREATE OR REPLACE FUNCTION exec_sql(query text) RETURNS void AS $$
-    BEGIN EXECUTE query; END;
-    $$ LANGUAGE plpgsql SECURITY DEFINER;
-    """
-    # This also needs exec_sql to run... chicken-and-egg problem.
-    # Fall back: use the Supabase database direct connection
-    print("Cannot auto-create table via REST API alone.")
-    print("Attempting direct database connection...")
+def row_to_record(row):
+    """Convert a CSV row to the {company_number, company_name, metadata} shape."""
+    metadata = {}
 
-    try:
-        import psycopg2
-    except ImportError:
-        print("Installing psycopg2-binary...")
-        os.system("pip install psycopg2-binary")
-        import psycopg2
+    for csv_col, meta_key in METADATA_MAP.items():
+        val = row.get(csv_col, "")
+        if val:                       # skip blanks
+            metadata[meta_key] = val
 
-    db_password = os.getenv("SUPABASE_DB_PASSWORD")
-    if not db_password:
-        print("\n ERROR: SUPABASE_DB_PASSWORD not set in keys.env")
-        print(f" Add this line to config/keys.env:")
-        print(f" SUPABASE_DB_PASSWORD=your-database-password")
-        print(f"\n Find it in Supabase Dashboard > Project Settings > Database > Connection string")
-        exit(1)
+    # Pipeline status — always pending for fresh uploads
+    metadata["pipeline"] = {"status": "pending"}
 
-    # Use the connection pooler (IPv4 compatible)
-    conn = psycopg2.connect(
-        host=f"aws-0-eu-west-1.pooler.supabase.com",
-        port=6543,
-        dbname="postgres",
-        user=f"postgres.{project_ref}",
-        password=db_password,
-        options="-c statement_timeout=60000",
-    )
-    conn.autocommit = True
-    cur = conn.cursor()
-    cur.execute(create_sql)
-    cur.close()
-    conn.close()
-    print(f"Table '{TABLE_NAME}' created successfully via direct DB connection!")
+    return {
+        "company_number": row["CompanyNumber"],
+        "company_name":   row["CompanyName"],
+        "metadata":       metadata,
+    }
 
-elif resp.status_code in (200, 204):
-    print(f"Table '{TABLE_NAME}' created successfully via RPC!")
-else:
-    print(f"Unexpected response ({resp.status_code}): {resp.text}")
-    exit(1)
 
-# --- Step 2: Upload data ---
-print(f"\nUploading {len(df)} rows to '{TABLE_NAME}'...")
+# ---------------------------------------------------------------------------
+# Preview a sample row before uploading
+# ---------------------------------------------------------------------------
+sample = row_to_record(df.iloc[0])
+print("=== SAMPLE ROW ===")
+print(json.dumps(sample, indent=2))
+print("===================\n")
+
+input("Press Enter to upload all rows, or Ctrl-C to cancel...")
+
+# ---------------------------------------------------------------------------
+# Upload
+# ---------------------------------------------------------------------------
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-batch_size = 500
-for i in range(0, len(df), batch_size):
-    batch = df.iloc[i:i+batch_size].to_dict(orient="records")
+print(f"Uploading {len(df)} rows to '{TABLE_NAME}'...")
+
+for i in range(0, len(df), BATCH_SIZE):
+    batch = [row_to_record(df.iloc[j]) for j in range(i, min(i + BATCH_SIZE, len(df)))]
     try:
         supabase.table(TABLE_NAME).insert(batch).execute()
-        print(f"  Inserted {min(i+batch_size, len(df))} / {len(df)}")
+        print(f"  Inserted {min(i + BATCH_SIZE, len(df))} / {len(df)}")
     except Exception as e:
         print(f"  Error at row {i}: {e}")
         exit(1)

@@ -399,6 +399,131 @@ IXBRL_TAG_MAP = {
     "PurchaseOfIntangibleAssets": "capex_intangibles",                         # IFRS
     "PurchaseOfOtherIntangibleAssets": "capex_intangibles",                    # IFRS variant
 
+    # --- Profit after tax ---
+    "ProfitLossForPeriod": "profit_after_tax",                                # IFRS
+    "ProfitLossForYear": "profit_after_tax",                                  # FRS 102
+    "ProfitLossOnOrdinaryActivitiesAfterTax": "profit_after_tax",             # FRS 102
+    "ProfitLossAfterTax": "profit_after_tax",                                 # variant
+    "ProfitLossAttributableToOwnersOfParent": "profit_after_tax",             # IFRS
+    "ProfitLoss": "profit_after_tax",                                         # IFRS generic
+    "RetainedProfitLossForFinancialYear": "profit_after_tax",                 # FRS 102
+
+    # --- Other operating income ---
+    "OtherOperatingIncome": "other_operating_income",                         # FRS 102
+    "OtherOperatingIncomeExpense": "other_operating_income",                  # IFRS
+    "OtherIncome": "other_operating_income",                                  # variant
+
+    # --- Finance income ---
+    "InterestReceivableSimilarIncome": "finance_income",                      # FRS 102 core
+    "InterestReceivable": "finance_income",                                   # UK GAAP
+    "InterestReceivableAndSimilarIncome": "finance_income",                   # FRS 102 variant
+    "FinanceIncome": "finance_income",                                        # IFRS
+    "InterestIncome": "finance_income",                                       # IFRS variant
+
+    # --- Opening / closing cash ---
+    "CashCashEquivalentsAtBeginningOfPeriod": "opening_cash",                 # IFRS
+    "CashCashEquivalentsBeginningPeriod": "opening_cash",                     # variant
+    "CashEquivalentsAtBeginningOfPeriod": "opening_cash",                     # variant
+    "CashCashEquivalentsAtEndOfPeriod": "closing_cash",                       # IFRS
+    "CashCashEquivalentsEndPeriod": "closing_cash",                           # variant
+    "CashEquivalentsAtEndOfPeriod": "closing_cash",                           # variant
+
+    # --- Net change in cash ---
+    "IncreaseDecreaseInCashCashEquivalents": "net_change_cash",               # IFRS
+    "NetIncreaseDecreaseInCashCashEquivalents": "net_change_cash",            # variant
+    "ChangeInCashCashEquivalents": "net_change_cash",                         # FRS 102
+    "IncreaseDecreaseInCashEquivalents": "net_change_cash",                   # variant
+
+    # --- Net cash from operating ---
+    "NetCashFromOperatingActivities": "net_cash_operating",                   # IFRS
+    "CashFlowsFromUsedInOperatingActivitiesTotal": "net_cash_operating",      # variant
+
+    # --- Net cash from investing ---
+    "NetCashFlowsFromUsedInInvestingActivities": "net_cash_investing",        # FRS 102
+    "CashFlowsFromUsedInInvestingActivities": "net_cash_investing",           # IFRS
+    "NetCashFromInvestingActivities": "net_cash_investing",                   # IFRS variant
+    "NetCashUsedInInvestingActivities": "net_cash_investing",                 # variant
+
+    # --- Net cash from financing ---
+    "NetCashFlowsFromUsedInFinancingActivities": "net_cash_financing",        # FRS 102
+    "CashFlowsFromUsedInFinancingActivities": "net_cash_financing",           # IFRS
+    "NetCashFromFinancingActivities": "net_cash_financing",                   # IFRS variant
+    "NetCashUsedInFinancingActivities": "net_cash_financing",                 # variant
+
+    # --- Retained earnings ---
+    "RetainedEarningsAccumulatedLosses": "retained_earnings",                 # IFRS
+    "RetainedEarnings": "retained_earnings",                                  # variant
+    "ProfitLossAccountReserve": "retained_earnings",                          # FRS 102
+    "ProfitAndLossAccount": "retained_earnings",                              # FRS 102 core
+    "ProfitAndLossAccountBalance": "retained_earnings",                       # variant
+    "AccumulatedProfitLoss": "retained_earnings",                             # IFRS
+
+    # --- Share premium ---
+    "SharePremiumAccount": "share_premium",                                   # FRS 102 core
+    "SharePremium": "share_premium",                                          # IFRS
+    "SharePremiumReserve": "share_premium",                                   # variant
+
+    # --- Other reserves ---
+    "OtherReserves": "other_reserves",                                        # IFRS
+    "OtherReservesTotal": "other_reserves",                                   # variant
+    "RevaluationReserve": "other_reserves",                                   # FRS 102
+    "CapitalRedemptionReserve": "other_reserves",                             # FRS 102
+    "MergerReserve": "other_reserves",                                        # FRS 102
+
+    # --- Minority interest ---
+    "MinorityInterest": "minority_interest",                                  # FRS 102
+    "NonControllingInterest": "minority_interest",                            # IFRS
+    "NonControllingInterests": "minority_interest",                           # variant
+    "EquityAttributableToNonControllingInterests": "minority_interest",       # IFRS
+
+    # --- Intangible assets ---
+    "IntangibleAssets": "intangible_assets",                                  # FRS 102 / IFRS
+    "IntangibleAssetsNet": "intangible_assets",                               # variant
+    "TotalIntangibleFixedAssets": "intangible_assets",                        # FRS 102
+    "IntangibleAssetsOtherThanGoodwill": "intangible_assets",                 # IFRS
+
+    # --- Goodwill ---
+    "Goodwill": "goodwill",                                                   # FRS 102 / IFRS
+    "GoodwillNet": "goodwill",                                                # variant
+    "GoodwillGross": "goodwill",                                              # variant
+
+    # --- Tangible fixed assets ---
+    "TangibleFixedAssets": "tangible_fixed_assets",                           # FRS 102 core
+    "PropertyPlantEquipment": "tangible_fixed_assets",                        # IFRS
+    "PropertyPlantAndEquipment": "tangible_fixed_assets",                     # IFRS variant
+    "TotalTangibleFixedAssets": "tangible_fixed_assets",                      # FRS 102
+    "PropertyPlantEquipmentNet": "tangible_fixed_assets",                     # variant
+
+    # --- Right of use assets ---
+    "RightOfUseAssets": "right_of_use_assets",                                # IFRS 16
+    "RightOfUseAssetsNet": "right_of_use_assets",                             # variant
+    "LeasedAssetsRightOfUse": "right_of_use_assets",                          # variant
+
+    # --- Investment properties ---
+    "InvestmentProperty": "investment_properties",                            # IFRS
+    "InvestmentProperties": "investment_properties",                          # variant
+    "InvestmentPropertyFairValue": "investment_properties",                   # IFRS variant
+
+    # --- Fixed asset investments ---
+    "InvestmentsFixedAssets": "investments_fixed",                            # FRS 102
+    "FixedAssetInvestments": "investments_fixed",                             # FRS 102 variant
+    "Investments": "investments_fixed",                                       # generic
+    "InvestmentsInSubsidiaries": "investments_fixed",                         # FRS 102
+    "InvestmentsInAssociates": "investments_fixed",                           # FRS 102
+    "OtherInvestmentsNoncurrent": "investments_fixed",                        # IFRS
+
+    # --- Other receivables ---
+    "OtherDebtors": "other_receivables",                                      # FRS 102
+    "OtherReceivables": "other_receivables",                                  # IFRS
+    "OtherReceivablesCurrent": "other_receivables",                           # IFRS variant
+    "PrepaymentsAccruedIncome": "other_receivables",                          # FRS 102
+    "Prepayments": "other_receivables",                                       # variant
+
+    # --- Short-term investments ---
+    "ShortTermInvestments": "short_term_investments",                         # generic
+    "CurrentAssetInvestments": "short_term_investments",                      # FRS 102
+    "OtherFinancialAssetsCurrent": "short_term_investments",                  # IFRS
+
     # --- Repayment of borrowings ---
     "RepaymentBorrowings": "repayment_borrowings",                             # FRS 102
     "RepaymentsOfBorrowings": "repayment_borrowings",                          # IFRS
@@ -509,21 +634,32 @@ def _extract_year(date_str):
 # Which canonical fields belong to which statement
 INCOME_STATEMENT_FIELDS = [
     "revenue", "cost_of_sales", "gross_profit", "distribution_costs",
-    "admin_expenses", "employee_costs", "depreciation", "amortisation",
-    "operating_profit", "finance_costs", "tax_expense",
+    "admin_expenses", "other_operating_income", "employee_costs",
+    "depreciation", "amortisation", "operating_profit",
+    "finance_income", "finance_costs", "profit_before_tax",
+    "tax_expense", "profit_after_tax",
 ]
 BALANCE_SHEET_FIELDS = [
-    "total_fixed_assets", "total_current_assets", "cash", "inventories",
-    "trade_receivables", "total_assets", "trade_payables", "other_payables",
-    "short_term_borrowings", "long_term_borrowings", "lease_liabilities_noncurrent",
-    "provisions", "pension_obligations", "total_current_liabilities",
-    "total_noncurrent_liabilities", "total_liabilities", "net_assets",
-    "total_equity", "share_capital",
+    "intangible_assets", "goodwill", "tangible_fixed_assets",
+    "right_of_use_assets", "investment_properties", "investments_fixed",
+    "total_fixed_assets", "inventories", "trade_receivables",
+    "other_receivables", "cash", "short_term_investments",
+    "total_current_assets", "total_assets",
+    "trade_payables", "other_payables", "short_term_borrowings",
+    "long_term_borrowings", "lease_liabilities_noncurrent",
+    "provisions", "pension_obligations",
+    "total_current_liabilities", "total_noncurrent_liabilities",
+    "total_liabilities", "net_assets",
+    "share_capital", "share_premium", "retained_earnings",
+    "other_reserves", "minority_interest", "total_equity",
 ]
 CASH_FLOW_FIELDS = [
-    "operating_cash_flow", "capex_ppe", "capex_intangibles",
-    "repayment_borrowings", "proceeds_borrowings", "proceeds_disposal_ppe",
-    "dividends_paid_cf", "lease_payments", "tax_paid",
+    "operating_cash_flow", "net_cash_operating",
+    "capex_ppe", "capex_intangibles", "net_cash_investing",
+    "repayment_borrowings", "proceeds_borrowings",
+    "proceeds_disposal_ppe", "dividends_paid_cf",
+    "lease_payments", "tax_paid", "net_cash_financing",
+    "opening_cash", "closing_cash", "net_change_cash",
 ]
 
 
@@ -797,38 +933,61 @@ def _cagr(history):
 
 
 def calculate_derived_metrics(data):
-    """Add ebitda_margin, cash_conversion, and CAGR for all history metrics."""
+    """Run the full financial computation pipeline on extracted data.
+
+    Steps:
+      1. Sign normalisation (per year)
+      2. Gap-fills (per year)
+      3. Single-row derivations — margins, EBITDA, FCF, ratios (per year)
+      4. Validations (per year)
+      5. Cross-period metrics — YoY growth, CAGR (across years)
+      6. Legacy CAGR for history dicts
+
+    All audit trails are logged to derivation_log.computation_audit.
+    """
+    from financial_computations import compute, compute_cross_period
+
+    # Run per-year pipeline: signs → gap-fills → derivations → validations
+    data = compute(data)
+
+    # Run cross-period metrics: YoY growth and CAGR
+    data = compute_cross_period(data)
+
+    # Legacy: ensure ebitda_margin and cash_conversion are set
     revenue = data.get("revenue")
     ebitda = data.get("ebitda")
-
-    # EBITDA margin
-    if revenue and ebitda and revenue != 0:
+    if revenue and ebitda and revenue != 0 and data.get("ebitda_margin") is None:
         data["ebitda_margin"] = round(ebitda / revenue, 4)
 
-    # Cash conversion = FCF / EBITDA
     fcf = data.get("fcf")
-    if fcf is not None and ebitda and ebitda != 0:
+    if fcf is not None and ebitda and ebitda != 0 and data.get("cash_conversion") is None:
         data["cash_conversion"] = round(fcf / ebitda, 4)
 
-    # CAGR for all metrics with history
-    rev_cagr = _cagr(data.get("revenue_history"))
-    if rev_cagr is not None:
-        data["revenue_cagr"] = rev_cagr
+    # Legacy CAGR from history dicts
+    if data.get("revenue_cagr") is None:
+        rev_cagr = _cagr(data.get("revenue_history"))
+        if rev_cagr is not None:
+            data["revenue_cagr"] = rev_cagr
 
-    ebitda_cagr = _cagr(data.get("ebitda_history"))
-    if ebitda_cagr is not None:
-        data["ebitda_cagr"] = ebitda_cagr
+    if data.get("ebitda_cagr") is None:
+        ebitda_cagr = _cagr(data.get("ebitda_history"))
+        if ebitda_cagr is not None:
+            data["ebitda_cagr"] = ebitda_cagr
 
     return data
 
 # ---------------------------------------------------------------------------
 # Step 7 — Write results back to Supabase
 # ---------------------------------------------------------------------------
-def update_company(supabase, company_number, updates):
-    """Update a single company row in Supabase."""
-    supabase.table("companies").update(updates).eq(
-        "company_number", company_number
-    ).execute()
+def update_company(supabase, company_number, metadata_patch):
+    """Deep-merge *metadata_patch* into the metadata JSONB for a company.
+
+    Uses the update_company_metadata RPC (see sql/update_company_metadata.sql).
+    """
+    supabase.rpc("update_company_metadata", {
+        "p_company_number": company_number,
+        "p_patch": metadata_patch,
+    }).execute()
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -839,7 +998,7 @@ def process_batch(supabase, limit=BATCH_SIZE):
     result = (
         supabase.table("companies")
         .select("company_number, company_name")
-        .eq("pipeline_status", "pending")
+        .eq("metadata->pipeline->>status", "pending")
         .limit(limit)
         .execute()
     )
@@ -859,7 +1018,7 @@ def process_batch(supabase, limit=BATCH_SIZE):
             filing = get_latest_accounts_filing(cn)
             if filing is None:
                 log.info("  No accounts filing found — marking no_filing")
-                update_company(supabase, cn, {"pipeline_status": "no_filing"})
+                update_company(supabase, cn, {"pipeline": {"status": "no_filing"}})
                 counts["no_filing"] += 1
                 continue
 
@@ -869,7 +1028,7 @@ def process_batch(supabase, limit=BATCH_SIZE):
             metadata = get_document_metadata(filing)
             if metadata is None:
                 log.warning("  No document metadata link — marking failed")
-                update_company(supabase, cn, {"pipeline_status": "failed"})
+                update_company(supabase, cn, {"pipeline": {"status": "failed"}})
                 counts["failed"] += 1
                 continue
 
@@ -885,17 +1044,17 @@ def process_batch(supabase, limit=BATCH_SIZE):
             update_company(supabase, cn, {
                 "filing_format": fmt,
                 "last_accounts_date": last_accounts_date,
-            })
+            })  # these keys land inside metadata JSONB
             counts[fmt] += 1
             log.info("  Saved filing_format='%s' — still pending for parsing", fmt)
 
         except requests.exceptions.HTTPError as e:
             log.error("  HTTP error for %s: %s", cn, e)
-            update_company(supabase, cn, {"pipeline_status": "failed"})
+            update_company(supabase, cn, {"pipeline": {"status": "failed"}})
             counts["failed"] += 1
         except Exception as e:
             log.error("  Unexpected error for %s: %s", cn, e, exc_info=True)
-            update_company(supabase, cn, {"pipeline_status": "failed"})
+            update_company(supabase, cn, {"pipeline": {"status": "failed"}})
             counts["failed"] += 1
 
     # Batch summary
