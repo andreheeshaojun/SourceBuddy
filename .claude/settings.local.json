@@ -13,7 +13,14 @@
       "Bash(python \"Data_Cleaning/\\(test\\)_upload_to_supabase.py\")",
       "Bash(pip install:*)",
       "Bash(nslookup db.inqwlidpatcqckvdqtcn.supabase.co)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip list:*)",
+      "Bash(tesseract --version)",
+      "Bash(where tesseract:*)",
+      "Read(//c/Program Files/Tesseract-OCR/**)",
+      "Read(//c/Program Files \\(x86\\)/Tesseract-OCR/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/Andre Hee/**)"
     ]
   }
 }
