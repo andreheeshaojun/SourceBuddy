@@ -26,7 +26,7 @@ col_mapping = {col: clean_col(col) for col in df.columns}
 df.rename(columns=col_mapping, inplace=True)
 df = df.fillna("").replace(["nan", "NaN", "None"], "")
 
-TABLE_NAME = "companies"
+TABLE_NAME = "Raw CSV Data Test"
 
 # --- Step 1: Create the table via Supabase SQL endpoint ---
 print(f"Creating table '{TABLE_NAME}' if it doesn't exist...")

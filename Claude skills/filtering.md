@@ -26,11 +26,15 @@ Filter each CSV to only retain companies where the `Accounts.AccountCategory` co
 
 Remove all rows that do not match one of these three categories (e.g. MICRO, DORMANT, TOTAL EXEMPTION FULL, TOTAL EXEMPTION SMALL, NO ACCOUNTS FILED, etc.).
 
-### Step 4 - Replace hyphens and underscores with spaces
+### Step 4 - Filter by CompanyStatus
+
+Filter to only keep companies where the `CompanyStatus` column equals **Active**. Remove all other rows (e.g. Liquidation, In Administration, Proposal to Strike off, etc.).
+
+### Step 5 - Replace hyphens and underscores with spaces
 
 After filtering, replace every hyphen (`-`) and underscore (`_`) with a space (` `) across all string values in the data.
 
-### Step 5 - Fill blank numeric columns with 0
+### Step 6 - Fill blank numeric columns with 0
 
 Replace blank/NaN values with `0` in the following numeric columns only. This ensures valid integers for database import (e.g. Supabase). Do **not** fill text columns with 0.
 
@@ -42,11 +46,25 @@ Numeric columns to fill:
 - `LimitedPartnerships.NumGenPartners`
 - `LimitedPartnerships.NumLimPartners`
 
-### Step 6 - Convert remaining NaN values to None
+### Step 7 - Convert remaining NaN values to None
 
 For all other columns, convert remaining `NaN` values to `None` using `df.where(df.notna(), None)`. This ensures that missing/empty cells in text columns are written as truly blank in the CSV output rather than as the string `NaN`.
 
-### Step 7 - Merge into a single CSV
+### Step 8 - Add empty qualitative columns
+
+After all cleaning, add three new empty text columns to the right side of the dataframe:
+
+- `company_description` — free-text company description (to be populated later)
+- `risks` — free-text risk notes (to be populated later)
+- `qualitative_data` — free-text qualitative data (to be populated later)
+
+```python
+df_merged["company_description"] = None
+df_merged["risks"] = None
+df_merged["qualitative_data"] = None
+```
+
+### Step 9 - Merge into a single CSV
 
 After filtering and cleaning, merge all filtered parts into one combined CSV file.
 
@@ -67,6 +85,7 @@ for csv_path in csv_files:
     df = pd.read_csv(csv_path)
     df.columns = df.columns.str.strip()
     df_filtered = df[df["Accounts.AccountCategory"].str.strip().str.upper().isin(target_categories)]
+    df_filtered = df_filtered[df_filtered["CompanyStatus"].str.strip() == "Active"]
     print(f"  Rows: {len(df)} -> {len(df_filtered)}")
     filtered_parts.append(df_filtered)
 
@@ -92,19 +111,29 @@ for col in numeric_columns:
 # Convert remaining NaN values to None for clean CSV output
 df_merged = df_merged.where(df_merged.notna(), None)
 
+# Add empty qualitative columns
+df_merged["company_description"] = None
+df_merged["risks"] = None
+df_merged["qualitative_data"] = None
+
 df_merged.to_csv("CompanyData/FilteredCompanyData.csv", index=False)
 
 print(f"\nTotal filtered rows: {len(df_merged)}")
 ```
 
-### Step 8 - Verify the merged data
+### Step 10 - Verify the merged data
 
 1. Confirm the merged CSV was saved to `CompanyData/FilteredCompanyData.csv`.
 2. Check that only SMALL, MEDIUM, and LARGE values remain in the `Accounts.AccountCategory` column:
    ```python
    print(df_merged["Accounts.AccountCategory"].value_counts())
    ```
-3. Confirm all column headers have no leading or trailing whitespace.
+3. Check that only `Active` remains in the `CompanyStatus` column:
+   ```python
+   print(df_merged["CompanyStatus"].value_counts())
+   ```
+4. Confirm the three new columns (`company_description`, `risks`, `qualitative_data`) exist and are empty/None.
+5. Confirm all column headers have no leading or trailing whitespace.
 4. Confirm no hyphens or underscores remain in string values.
 5. Confirm numeric columns contain integers with no blanks — all should be `0` or a valid number.
 6. Confirm no `NaN` strings appear in the CSV — remaining missing values should be truly blank.
