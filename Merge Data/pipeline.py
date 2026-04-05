@@ -913,8 +913,28 @@ def parse_ixbrl_multi(company_number, filings):
     return latest_result, filing_format, last_accounts_date
 
 
-# TODO: implement electronic PDF parser
-# TODO: implement scanned PDF handler
+# ---------------------------------------------------------------------------
+# Step 5b — PDF extraction (non-iXBRL path)
+# ---------------------------------------------------------------------------
+# For electronic_pdf and scanned_pdf filings, use the SME extraction approach
+# documented in `Claude skills/sme-extraction.md`.
+#
+# Key difference from the iXBRL path:
+#   - iXBRL (parse_ixbrl_multi): fetches up to 5 annual filings and merges
+#     them to build multi-year revenue/EBITDA/FCF history.
+#   - PDF extraction: parses a SINGLE filing PDF via OCR + spatial analysis.
+#     Each PDF contains at most TWO years (current year + prior year comparatives).
+#     There is NO 5-year history from a single PDF — multi-year history must be
+#     built by processing multiple filings sequentially and merging results.
+#
+# Output of PDF extraction is a JSON with the same structure as parse_ixbrl()
+# so it flows into calculate_derived_metrics() unchanged. History dicts
+# (revenue_history, ebitda_history, etc.) will only have 1-2 entries per filing;
+# to accumulate history, call get_accounts_filings(count=5) and process each PDF.
+#
+# TODO: implement electronic PDF parser (use pdfplumber text layer first, fall
+#       back to OCR if no text layer — see sme-extraction.md Step 1)
+# TODO: implement scanned PDF handler (OCR via EasyOCR — see sme-extraction.md)
 
 # ---------------------------------------------------------------------------
 # Step 6 — Calculate derived metrics
