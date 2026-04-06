@@ -18,22 +18,84 @@ This project extracts financial data from UK Companies House filings and populat
 
 ## Database Schema — `companies` table
 
-This is the only table. One row per company. It serves both the pipeline and the frontend.
+This is the primary table. One row per company. It serves both the pipeline and the frontend.
 
-**Columns populated by the initial CSV import (already filled):**
-company_number (text, primary key), company_name, sic_code_1, sic_code_2, registered_address, company_category, incorporation_date, accounts_category, company_status
+### Typed columns
 
-**Columns populated by the extraction pipeline (start as null):**
-revenue, ebitda, ebitda_margin, fcf, cash_conversion, employees, revenue_history (jsonb, keyed by year), ebitda_history (jsonb, keyed by year), revenue_cagr, ebitda_cagr, accounts_type, filing_format, last_accounts_date
+**Identity & classification:**
+| Column | Type | Source |
+|---|---|---|
+| `company_number` | text, PK | CSV import |
+| `company_name` | text, NOT NULL | CSV import |
+| `company_status` | text | CSV import (via migration) |
+| `accounts_category` | text | CSV import (via migration) |
+| `sector` | text | Manual / frontend |
+| `ownership` | text | Manual / frontend |
+| `location` | text | Manual / frontend |
 
-**Pipeline tracking column:**
-pipeline_status — values are `pending`, `extracted`, `failed`, `no_filing`. The pipeline queries for `pending` rows, processes them, and updates to one of the other three values.
+**Pipeline tracking:**
+| Column | Type | Source |
+|---|---|---|
+| `pipeline_status` | text | Pipeline. Values: `pending`, `extracted`, `failed`, `no_filing` |
+| `filing_format` | text | Pipeline. Values: `ixbrl`, `electronic_pdf`, `scanned_pdf` |
+| `last_accounts_date` | date | Pipeline. Date of most recent filing processed |
 
-**Conventions:**
+**Financial display metrics (current year):**
+| Column | Type | Source |
+|---|---|---|
+| `revenue` | numeric | Pipeline (iXBRL extraction) |
+| `ebitda` | numeric | Pipeline (derived: operating_profit + depreciation + amortisation) |
+| `ebitda_margin` | numeric | Pipeline (derived: ebitda / revenue) |
+| `fcf` | numeric | Pipeline (derived: operating_cash_flow - capex) |
+| `cash_conversion` | numeric | Pipeline (derived: fcf / ebitda) |
+| `employees` | integer | Pipeline (iXBRL extraction) |
+| `revenue_cagr_5y` | numeric | Pipeline (5-year compound annual growth rate) |
+
+**History (JSONB, keyed by year string e.g. `{"2021": 1500000, "2022": 1700000}`):**
+| Column | Type |
+|---|---|
+| `revenue_history` | jsonb |
+| `ebitda_history` | jsonb |
+| `fcf_history` | jsonb |
+| `employees_history` | jsonb |
+
+**Full financial statements (JSONB, keyed by year, each year containing all line items):**
+| Column | Type | Contents |
+|---|---|---|
+| `income_statement` | jsonb | revenue, cost_of_sales, gross_profit, operating_profit, depreciation, amortisation, finance_costs, tax_expense, profit_before_tax, profit_after_tax, etc. |
+| `balance_sheet` | jsonb | total_assets, total_liabilities, net_assets, cash, trade_receivables, trade_payables, borrowings, equity components, etc. |
+| `cash_flow_statement` | jsonb | operating_cash_flow, capex_ppe, capex_intangibles, net_cash_investing, net_cash_financing, opening/closing cash, etc. |
+
+**Other JSONB columns:**
+| Column | Type | Contents |
+|---|---|---|
+| `derivation_log` | jsonb | Audit trail: how EBITDA, FCF, etc. were calculated, plus computation_audit (sign corrections, gap-fills) |
+| `company_profile` | jsonb | Reserved for enrichment data |
+| `metadata` | jsonb | Overflow storage — see below |
+
+**Timestamps:**
+| Column | Type |
+|---|---|
+| `created_at` | timestamptz |
+| `updated_at` | timestamptz |
+
+### The `metadata` JSONB column
+
+This column holds two categories of data:
+
+**1. CSV-imported fields that don't have typed columns:**
+SIC codes (`sic_code_1` through `sic_code_4`), address fields (`address_line_1`, `post_town`, `postcode`, `county`, `country`, etc.), `incorporation_date`, `company_category`, `country_of_origin`, account reference dates.
+
+**2. Pipeline-computed derived ratios and cross-period metrics:**
+`gross_margin_pct`, `operating_margin_pct`, `net_margin_pct`, `return_on_assets`, `return_on_equity`, `total_capex`, `capex_to_revenue`, `net_debt`, `net_debt_to_ebitda`, `current_ratio`, `quick_ratio`, `debt_to_equity`, `interest_cover`, `asset_turnover`, `revenue_per_employee`, `profit_per_employee`, `revenue_yoy_growth`, `ebitda_yoy_growth`, `profit_yoy_growth`, `revenue_cagr`, `ebitda_cagr`, `revenue_cagr_3yr`, `revenue_cagr_5yr`, `validation_warnings`.
+
+### Conventions
+
 - All monetary values are in GBP, stored as plain numbers (no formatting).
 - Margins and percentages are stored as decimals (0.15 means 15%). Frontend multiplies by 100 for display.
 - JSONB history fields are objects keyed by year string, e.g. `{"2021": 1500000, "2022": 1700000}`.
-- CAGR is calculated from the history values for all metrics (revenue, EBITDA). The pipeline fetches the 5 most recent accounts filings per company to build ~5 years of history. CAGR is computed over the full span available.
+- JSONB statement fields are objects keyed by year string, each year containing a dict of line items.
+- The pipeline writes display metrics to typed columns and derived ratios to `metadata`. Use `update_company()` for typed columns and `update_company_metadata_blob()` for the metadata JSONB.
 
 ---
 
@@ -42,7 +104,7 @@ pipeline_status — values are `pending`, `extracted`, `failed`, `no_filing`. Th
 The pipeline processes companies in batches of 50. For each company, the sequence is:
 
 **1. Get filing history.**
-Hit the Companies House filing history endpoint for the company_number. Filter by category `accounts`. Fetch the 5 most recent filings to build ~5 years of historical data. If no accounts filings exist, mark the company as `no_filing` and move on.
+Hit the Companies House filing history endpoint for the company_number. Fetch the 5 most recent accounts filings to build multi-year history. If no accounts filings exist, mark the company as `no_filing` and move on.
 
 **2. Check the filing metadata.**
 Each filing item has a `paper_filed` boolean and a link to document metadata. The document metadata response contains a `resources` object listing available formats.
@@ -52,22 +114,30 @@ Each filing item has a `paper_filed` boolean and a link to document metadata. Th
 - If only `application/pdf` is available and `paper_filed` is false → this is an electronically generated PDF with a text layer. Set filing_format to `electronic_pdf`.
 - If only `application/pdf` and `paper_filed` is true → this is a scanned document with no text layer. Set filing_format to `scanned_pdf`. This is the hardest and most expensive to process.
 
-**4. Download the document.**
-Request the document content endpoint with an `Accept` header matching the desired format. Same auth as all other CH API calls.
+**4. Download and parse based on format:**
 
-**5. Parse based on format:**
+- **iXBRL (implemented):** Parse all 5 filings via `parse_ixbrl_multi`. Financial values are embedded in inline XBRL tags (ix:nonfraction) with taxonomy names identifying what each number represents. The tag-to-field mapping covers UK GAAP, FRS 102, FRS 105, and IFRS taxonomies (~200 tag mappings). Watch for `scale` attributes (scale="3" means thousands, scale="6" means millions) and `sign` attributes for negation. Context references distinguish current year from prior year. Data from all 5 filings is merged to build multi-year history. Do not use an LLM for iXBRL — it is already structured data.
 
-- **iXBRL:** Parse as HTML. Financial values are embedded in inline XBRL tags (ix:nonfraction, ix:nonnumeric) with taxonomy names identifying what each number represents. Common tags include Turnover, GrossProfit, OperatingProfit, DepreciationAmortisationImpairment, CashBankInHand, NetAssetsLiabilities, AverageNumberEmployeesDuringPeriod. Watch for `scale` attributes on tagged values — they indicate multipliers (scale="3" means thousands, scale="6" means millions). Check `sign` attributes for negation. Context references distinguish current year from prior year. Do not use an LLM for iXBRL — it is already structured data.
+- **Electronic PDF (not yet implemented):** PDF extraction is planned but not wired into the pipeline. Companies with this format get their `filing_format` recorded and are skipped. See `Claude skills/sme-extraction.md` for the planned approach.
 
-- **Electronic PDF:** Extract text using pdfplumber. Apply rule-based matching — build a dictionary of label variations that map to canonical financial fields (e.g. "Turnover", "Revenue", "Net turnover" all map to revenue). Use fuzzy matching for OCR-like imperfections. Use table extraction and column position logic to assign numbers to the correct year. If rule-based extraction fails on key fields, do NOT call an LLM — flag the company as `failed` with a note that it needs LLM review, and ask the user before proceeding. LLM fallback will be added later.
+- **Scanned PDF (not yet implemented):** Same as electronic PDF — format recorded, company skipped for now.
 
-- **Scanned PDF:** Requires OCR first (Tesseract for free, AWS Textract or Google Document AI for quality). After OCR, apply the same rule-based extraction as electronic PDFs. If the project is cost-sensitive, skip scanned PDFs entirely — mark as `failed` and revisit later. Most recent filings are electronic.
+**5. Compute derived metrics** (via `financial_computations.py`).
 
-**6. Calculate derived metrics.**
-EBITDA margin = EBITDA / revenue. CAGR = compound annual growth rate from the earliest and latest years in the history object, calculated for all metrics with history (revenue, EBITDA). The pipeline targets 5 years of history via multi-filing extraction. Cash conversion = FCF / EBITDA. Only calculate if the required inputs are present — do not infer or estimate missing values.
+The computation pipeline runs on the extracted data in this order:
+1. **Sign normalisation** — flip values that violate sign conventions (e.g. costs must be negative, revenue must be positive).
+2. **Gap-fills** — derive missing values algebraically (e.g. gross_profit = revenue + cost_of_sales, net_assets = total_assets + total_liabilities). 15 rules, never overwrites existing values.
+3. **Single-row derivations** — compute 20 analytical metrics per year: margins (gross, operating, net, EBITDA), returns (ROA, ROE), cash flow metrics (FCF, cash conversion, capex ratios), leverage (net debt, debt-to-equity, interest cover), liquidity (current ratio, quick ratio), efficiency (asset turnover, revenue/profit per employee).
+4. **Validations** — 6 consistency checks (balance sheet balances, P&L ties out, cash flow reconciles). Failures are logged to `validation_warnings`, not treated as extraction errors.
+5. **Cross-period metrics** — YoY growth (revenue, EBITDA, profit) and CAGR (3-year, 5-year) computed across years.
 
-**7. Write back to Supabase.**
-Update the company's row with all extracted and calculated values. Set pipeline_status to `extracted`. If any step failed, set pipeline_status to `failed` and log the error. Do not create new rows or new tables.
+**6. Write results to Supabase.**
+
+Results are split into two writes:
+- **Typed columns** (via `update_company`): revenue, ebitda, ebitda_margin, fcf, cash_conversion, employees, revenue_cagr_5y, all history JSONB, all statement JSONB, derivation_log, filing_format, last_accounts_date, pipeline_status = `extracted`.
+- **Metadata JSONB** (via `update_company_metadata_blob`): all derived ratios, YoY growth rates, CAGR variants, validation_warnings.
+
+If any step fails, set `pipeline_status` to `failed` and log the error.
 
 ---
 
@@ -96,18 +166,19 @@ URL comes from document metadata under `links.document`. Set the `Accept` header
 - Never process more than 50 companies per batch without verifying rate limits.
 - Never hardcode API keys. Always read from `config/keys.env`.
 - Never estimate or fabricate financial values. If a field cannot be extracted, leave it null.
-- Always update pipeline_status when done with a company, whether success or failure.
+- Always update `pipeline_status` when done with a company, whether success or failure.
 - Always handle Companies House 429 responses by backing off for 5 minutes before retrying.
 - Always check for and apply XBRL scale and sign attributes. Ignoring these produces values off by orders of magnitude.
-- Never call an LLM as a fallback for extraction. If rule-based parsing fails, flag the company as `failed` and ask the user first. LLM integration will be added later.
+- Write display metrics to typed columns. Write derived ratios and cross-period metrics to the `metadata` JSONB column.
+- Use `update_company()` for typed column writes and `update_company_metadata_blob()` for metadata JSONB writes. Do not mix them.
 
 ---
 
 ## When I Ask You To Do Things
 
-- "Process the next batch" → write a script that queries pending companies from Supabase, runs the full pipeline, and writes results back.
+- "Process the next batch" → run `process_batch` which queries pending companies from Supabase, runs the full pipeline (extraction + computation), and writes results back.
 - "Test on 5 companies" → same as above but with a limit of 5 and verbose logging so I can verify outputs.
-- "Add a new financial field" → tell me what column to add in Supabase, what XBRL tag to look for, and update the extraction logic.
+- "Add a new financial field" → tell me what column to add in Supabase (if typed) or what key to add in metadata, what XBRL tag to look for, and update the extraction logic.
 - "Debug a failed company" → query Supabase for that company, re-run the pipeline on just that row with detailed error output.
 - "Skip scanned PDFs" → set all scanned_pdf companies to failed and only process ixbrl and electronic_pdf.
-- "Show pipeline progress" → query Supabase for counts grouped by pipeline_status.
+- "Show pipeline progress" → query Supabase for counts grouped by `pipeline_status`.

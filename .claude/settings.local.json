@@ -47,7 +47,16 @@
       "WebFetch(domain:www.iasplus.com)",
       "mcp__ide__executeCode",
       "Bash(PYTHONIOENCODING=utf-8 python:*)",
-      "WebFetch(domain:find-and-update.company-information.service.gov.uk)"
+      "WebFetch(domain:find-and-update.company-information.service.gov.uk)",
+      "Bash(tasklist //FI \"IMAGENAME eq python.exe\")",
+      "Bash(taskkill //PID 36064 //F)",
+      "Bash(kill 2473)",
+      "Bash(tee test_batch_5.log)",
+      "Bash(taskkill //F //FI \"IMAGENAME eq python.exe\")",
+      "Bash(powershell:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"/c/Program Files/Tesseract-OCR:$PATH\")"
     ]
   }
 }

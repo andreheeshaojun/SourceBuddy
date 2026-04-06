@@ -78,28 +78,72 @@ doc.close()
 
 Path A is **orders of magnitude faster than OCR** (seconds vs minutes) on large filings. Verified on the 134-page John Lewis plc 2025 annual report — full income statement + balance sheet extracted with internal flows reconciling exactly.
 
-#### Path B — Scanned / no text layer (OCR via EasyOCR)
+#### Path B — Scanned / no text layer (two-pass OCR via Tesseract)
 
-For small-company filings, scanned documents, and any page where the text-layer probe fails, render at 2x zoom and run EasyOCR:
+For small-company filings, scanned documents, and any page where the text-layer probe fails, use a **two-pass OCR strategy** with Tesseract to avoid burning CPU on non-financial pages.
+
+**OCR backend: Tesseract via pytesseract.** Tesseract runs as a subprocess (no native DLL loading into the Python process), which avoids Windows Smart App Control (WDAC) blocks that affect PyTorch/EasyOCR. `pytesseract.image_to_data()` returns word-level bounding boxes as `(left, top, width, height)` with text and confidence (0-100). Convert each detection into the canonical polygon shape:
 
 ```python
-import easyocr
-reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+import pytesseract
 
-all_pages = {}
+def _tesseract_ocr(img):
+    """Run Tesseract on a PIL image -> list of (polygon, text, conf)."""
+    data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+    items = []
+    for i in range(len(data["text"])):
+        text = data["text"][i].strip()
+        if not text:
+            continue
+        conf = float(data["conf"][i])
+        if conf < 0:
+            continue  # Tesseract returns -1 for block/paragraph headers
+        conf /= 100.0  # normalise to 0-1
+        x0, y0 = float(data["left"][i]), float(data["top"][i])
+        x1, y1 = x0 + float(data["width"][i]), y0 + float(data["height"][i])
+        items.append(([[x0,y0],[x1,y0],[x1,y1],[x0,y1]], text, conf))
+    return items
+```
+
+**Pass 1 — Top-band identification (cheap).** Render every page at 1x zoom, crop the top 30% only, OCR the crop. Scale coordinates up by 2x so they sit in the same coordinate space as pass 2. This is enough to identify financial-statement pages (headings live in the top 6%), detect contents pages (top 25%), and match Part B hard-anchor headings.
+
+```python
+PASS1_TOP_FRAC = 0.30
+COORD_SCALE = 2.0  # scale pass-1 coords (1x) into pass-2 space (2x)
+
+top_band_pages = {}
 for i, page in enumerate(doc):
-    mat = fitz.Matrix(2, 2)  # 2x zoom for better OCR quality
+    mat = fitz.Matrix(1, 1)
     pix = page.get_pixmap(matrix=mat)
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    img_np = np.array(img)
-    results = reader.readtext(img_np, detail=1)
-    all_pages[i + 1] = results  # already in (bbox, text, conf) shape
+    crop_h = max(1, int(pix.height * PASS1_TOP_FRAC))
+    crop = img.crop((0, 0, pix.width, crop_h))
+    results = _tesseract_ocr(crop)
+    scaled = [([[x * COORD_SCALE, y * COORD_SCALE] for x, y in poly], text, conf)
+              for poly, text, conf in results]
+    top_band_pages[i + 1] = scaled
+```
 
-PAGE_WIDTH = doc[0].get_pixmap(matrix=fitz.Matrix(2, 2)).width
+**Identify pass-2 targets.** Walk top-band data to find financial statement pages + Part B section heading matches + ±1 neighbours of each financial page (catches "continued" statements and filleted-filing opt-out notes). Union of all these is the pass-2 set.
+
+**Pass 2 — Full-page OCR on targets only.** Render at 2x zoom, OCR the full page, overwrite pass-1 entries:
+
+```python
+targets = _identify_pass2_targets(top_band_pages)  # set of page numbers
+mat2 = fitz.Matrix(2, 2)
+for pnum in sorted(targets):
+    pix = doc[pnum - 1].get_pixmap(matrix=mat2)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    top_band_pages[pnum] = _tesseract_ocr(img)
+
+all_pages = top_band_pages
+PAGE_WIDTH = doc[0].get_pixmap(matrix=mat2).width
 doc.close()
 ```
 
-**Both paths produce the identical `all_pages` structure.** All subsequent steps (page identification, column detection, row clustering, `parse_financial_page`) work unchanged regardless of which path was used. Verified on Heights Management Test 2 (7-page scanned filleted small-company filing via Path B) and John Lewis plc (134-page born-digital listed plc via Path A) — same engine, both pass.
+**Performance impact.** Tesseract is significantly faster than EasyOCR on CPU (no neural network inference). Pass-1 crops are ~7.5% the pixel count of a full 2x page, so the identification sweep is very cheap. Combined with two-pass, a 20-page filing takes ~5-10s; a 130-page plc ~30-50s.
+
+**Both paths produce the identical `all_pages` structure.** Pages outside the pass-2 set retain their top-band-only items — sufficient for Part B locators A/C/D/F which only read top-of-page text. Financial parsing and Locator B only ever touch pass-2 pages, so they see full 2x OCR output. All subsequent steps (page identification, column detection, row clustering, `parse_financial_page`) work unchanged regardless of which path was used.
 
 ### Step 2 — Identify financial pages (top-band match, first-wins)
 
@@ -130,6 +174,7 @@ def is_contents_page(page_num):
 
 income_page = None
 balance_page = None
+cashflow_page = None
 notes_pages = []
 
 for pnum in all_pages:
@@ -151,16 +196,24 @@ for pnum in all_pages:
     ) and "CONTINUED" not in top:
         balance_page = pnum
         continue
+    if cashflow_page is None and (
+        "CASH FLOW STATEMENT" in top or
+        "STATEMENT OF CASH FLOWS" in top or
+        "CASH FLOWS" in top
+    ) and "CONTINUED" not in top:
+        cashflow_page = pnum
+        continue
     if "NOTES TO THE" in top and "FINANCIAL STATEMENTS" in top:
         notes_pages.append(pnum)
 ```
 
 **Page detection rules:**
 - **Top-band only.** Use `top_band_text(p, frac=0.06)` for all title matching. The frac can be loosened to 0.08 if titles wrap across multiple lines, but do not exceed 0.12 — body text below that band causes the JL-style false match.
-- **First-match wins.** Once `income_page` or `balance_page` is set, do not overwrite it. Later pages may reference the income statement in their body text (auditor's report, directors' report, statement of comprehensive income) and would otherwise overwrite the true page.
+- **First-match wins.** Once `income_page`, `balance_page`, or `cashflow_page` is set, do not overwrite it. Later pages may reference the income statement in their body text (auditor's report, directors' report, statement of comprehensive income) and would otherwise overwrite the true page.
 - **Skip Contents / TOC pages.** A TOC page lists "Balance Sheet" and "Income Statement" as entries and will false-match otherwise. Heights Management Test 2 page 2 is the verified failure case.
 - **Income Statement aliases:** "Profit and Loss Account", "Statement of Comprehensive Income", "Consolidated Income Statement".
 - **Balance Sheet aliases:** "Statement of Financial Position", "Consolidated Balance Sheet".
+- **Cash Flow aliases:** "Cash Flow Statement", "Statement of Cash Flows", "Consolidated Statement of Cash Flows", "Consolidated Cash Flow Statement". Note: cash flow statements are **not required** for small / micro / filleted filings under FRS 102 s1A and FRS 105 — `cashflow_page` will legitimately be `None` for those. Do not flag absence as an error.
 - **Filleted filings (s444(4)):** the filing may contain the phrase `"opted not to deliver ... Profit and Loss Account"` stating that the P&L is *not* in this document. Guard against matching it: require `"OPTED NOT TO DELIVER"` NOT to appear on the candidate page. Set `income_page = None` for filleted filings.
 - **Skip `(CONTINUED)` pages** for primary statement detection — they're continuations, not the start of the statement. The parser should still read their content when the primary page points to them.
 - **Notes pages may span many pages** — collect all of them into `notes_pages`.
@@ -385,6 +438,125 @@ BALANCE_LABEL_MAP_IFRS = {
 }
 ```
 
+#### Cash Flow Statement labels (both dialects)
+
+Cash flow wording is largely the same across UK GAAP (FRS 102) and IFRS, so a single map works. The cash flow statement is legally required only for medium-and-large filings — small / micro / filleted filings omit it under FRS 102 s1A and FRS 105, and the absence is lawful.
+
+**Critical specificity rules for cash flow:**
+
+1. **Sub-total aliasing.** "Cash generated from operations" (pre-tax, pre-interest) and "Net cash from operating activities" (the final operating sub-total, after tax and interest paid) are two different numbers. The downstream pipeline uses `operating_cash_flow` for the final sub-total. Map the more-specific phrase `"net cash ... from operating"` to `operating_cash_flow` and leave "cash generated from operations" unmapped (or map it to the same field as a fallback when the final sub-total is absent).
+
+2. **Indirect-method add-back collision.** Indirect-method cash flows begin with profit-before-tax and add back Depreciation, Amortisation, Finance costs, etc. **These line items share labels with the income statement** and would overwrite income-statement values if the cash flow label map included them. Solution: the cash flow label map must **not** include depreciation / amortisation / finance-cost add-backs. The add-backs are redundant (already captured on the P&L) and excluding them avoids the collision entirely.
+
+3. **Bracketed numbers are outflows.** Every investing and most financing line items appear in brackets, e.g. `(5,423)`. `parse_number` already parses open-brackets as negative, so `capex_ppe` comes out signed correctly without extra logic. The downstream `_NEGATIVE_FIELDS` sign-normalisation in `financial_computations` then confirms the sign.
+
+4. **"Interest paid" can appear in operating OR financing.** IFRS permits either classification. Map both occurrences to `tax_paid`'s sibling `interest_paid` only if you need the line; the main pipeline does not currently store interest_paid, so it is not in the default map.
+
+5. **Plural vs singular.** "Purchase of property, plant and equipment" vs "Purchases of property, plant and equipment" — substring matching treats these as distinct because the suffix `-s` changes position. Include both variants as separate map entries.
+
+6. **Lease payments.** Under IFRS 16 the line is usually "Payment of lease liabilities" or "Principal elements of lease payments". Under legacy FRS 102 it may be "Capital element of finance lease rental payments". Include all three variants.
+
+```python
+CASHFLOW_LABEL_MAP = {
+    # --- Operating activities: final sub-total ---
+    # Most-specific first: "net cash ... from operating" beats "cash generated"
+    "net cash from operating activities": "operating_cash_flow",
+    "net cash generated from operating activities": "operating_cash_flow",
+    "net cash used in operating activities": "operating_cash_flow",
+    "net cash inflow from operating activities": "operating_cash_flow",
+    "cash flows from operating activities": "operating_cash_flow",  # IFRS variant
+    # Fallback: pre-tax / pre-interest operating sub-total
+    "cash generated from operations": "net_cash_operating",
+
+    # --- Operating activities: tax paid ---
+    "income taxes paid": "tax_paid",
+    "corporation tax paid": "tax_paid",
+    "tax paid": "tax_paid",
+    "taxes paid": "tax_paid",
+
+    # --- Investing activities: PPE ---
+    "purchase of property, plant and equipment": "capex_ppe",
+    "purchases of property, plant and equipment": "capex_ppe",
+    "purchase of tangible fixed assets": "capex_ppe",
+    "purchases of tangible fixed assets": "capex_ppe",
+    "payments for property, plant and equipment": "capex_ppe",
+    "acquisition of property, plant and equipment": "capex_ppe",
+    "additions to property, plant and equipment": "capex_ppe",
+
+    # --- Investing activities: intangibles ---
+    "purchase of intangible assets": "capex_intangibles",
+    "purchases of intangible assets": "capex_intangibles",
+    "purchase of other intangible assets": "capex_intangibles",
+    "payments for intangible assets": "capex_intangibles",
+    "acquisition of intangible assets": "capex_intangibles",
+    "additions to intangible assets": "capex_intangibles",
+
+    # --- Investing activities: disposal proceeds ---
+    "proceeds from sale of property, plant and equipment": "proceeds_disposal_ppe",
+    "proceeds from disposal of property, plant and equipment": "proceeds_disposal_ppe",
+    "proceeds from sale of tangible fixed assets": "proceeds_disposal_ppe",
+    "proceeds from disposals of property": "proceeds_disposal_ppe",
+
+    # --- Investing activities: sub-total ---
+    "net cash used in investing activities": "net_cash_investing",
+    "net cash from investing activities": "net_cash_investing",
+    "net cash generated from investing activities": "net_cash_investing",
+    "cash flows from investing activities": "net_cash_investing",
+
+    # --- Financing activities: borrowings ---
+    "proceeds from borrowings": "proceeds_borrowings",
+    "proceeds from issue of borrowings": "proceeds_borrowings",
+    "proceeds from new borrowings": "proceeds_borrowings",
+    "new bank loans": "proceeds_borrowings",
+    "drawdown of borrowings": "proceeds_borrowings",
+    "drawdowns of borrowings": "proceeds_borrowings",
+    "repayment of borrowings": "repayment_borrowings",
+    "repayments of borrowings": "repayment_borrowings",
+    "repayment of bank loans": "repayment_borrowings",
+    "repayment of loans": "repayment_borrowings",
+
+    # --- Financing activities: lease payments ---
+    "payment of lease liabilities": "lease_payments",
+    "payments of lease liabilities": "lease_payments",
+    "repayment of lease liabilities": "lease_payments",
+    "principal elements of lease payments": "lease_payments",
+    "principal element of lease payments": "lease_payments",
+    "capital element of finance lease": "lease_payments",
+    "payments of finance lease obligations": "lease_payments",
+
+    # --- Financing activities: dividends ---
+    "dividends paid": "dividends_paid_cf",
+    "equity dividends paid": "dividends_paid_cf",
+    "dividends paid to shareholders": "dividends_paid_cf",
+    "dividends paid to equity holders": "dividends_paid_cf",
+
+    # --- Financing activities: sub-total ---
+    "net cash used in financing activities": "net_cash_financing",
+    "net cash from financing activities": "net_cash_financing",
+    "net cash generated from financing activities": "net_cash_financing",
+    "cash flows from financing activities": "net_cash_financing",
+
+    # --- Bottom of statement: cash position ---
+    "net increase in cash and cash equivalents": "net_change_cash",
+    "net decrease in cash and cash equivalents": "net_change_cash",
+    "net increase/(decrease) in cash": "net_change_cash",
+    "net (decrease)/increase in cash": "net_change_cash",
+    "cash and cash equivalents at beginning": "opening_cash",
+    "cash and cash equivalents at the beginning": "opening_cash",
+    "cash and cash equivalents at end": "closing_cash",
+    "cash and cash equivalents at the end": "closing_cash",
+}
+```
+
+**Why no depreciation/amortisation in this map:** these lines do appear on the cash flow statement as indirect-method add-backs. Including them here would cause `parse_financial_page` to match them (the cash flow page) and store the add-back value under `depreciation` / `amortisation`, silently overwriting or confirming the income statement values. In practice the add-back equals the income-statement value, so the numbers would agree — but the collision is a footgun. Safer to omit.
+
+**Sanity-check relationships:**
+- `operating_cash_flow + net_cash_investing + net_cash_financing ≈ net_change_cash` (allow ±1 rounding)
+- `opening_cash + net_change_cash ≈ closing_cash`
+- `closing_cash` from the cash flow statement should equal `cash` on the balance sheet for the same year (FX effects can cause small divergence)
+
+These relationships are used by `financial_computations.compute()` to gap-fill missing lines and flag inconsistencies, so the extractor just needs to return what it finds — no post-processing in the skill layer.
+
 #### Notes labels
 ```python
 NOTES_LABEL_MAP = {
@@ -424,6 +596,7 @@ Call the parsing engine on each identified page and assemble the structured outp
 ```python
 income = parse_financial_page(income_page, INCOME_LABEL_MAP) if income_page else {}
 balance = parse_financial_page(balance_page, BALANCE_LABEL_MAP) if balance_page else {}
+cashflow = parse_financial_page(cashflow_page, CASHFLOW_LABEL_MAP) if cashflow_page else {}
 notes = {}
 for np_ in notes_pages:
     notes.update(parse_financial_page(np_, NOTES_LABEL_MAP))
@@ -434,6 +607,7 @@ output = {
     "year_ended": year_ended,
     "currency": "GBP",
     "income_statement": income,
+    "cash_flow_statement": cashflow,  # may be empty for small / micro / filleted filings
     "balance_sheet": {
         "fixed_assets": {
             k: v for k, v in balance.items()
@@ -469,6 +643,8 @@ After generating the JSON, verify:
 1. **Balance Sheet balances:** `total_assets_less_current_liabilities` (or `net_assets`) must equal `shareholders_funds` for both years.
 2. **Income Statement flows:** Check `turnover - cost_of_sales = gross_profit` and `operating_profit + interest_receivable - interest_payable ≈ profit_before_taxation` where applicable.
 3. **Retained earnings movement:** Prior year retained earnings + current year profit ≈ current year retained earnings (allowing for dividends).
+4. **Cash flow totals reconcile:** `operating_cash_flow + net_cash_investing + net_cash_financing ≈ net_change_cash` (±1 rounding). `opening_cash + net_change_cash ≈ closing_cash`. Only run when cashflow_page was found.
+5. **Cash flow ↔ balance sheet tie:** `closing_cash` from the cash flow statement should equal the balance-sheet `cash` for the same year. Small divergence (<1%) is acceptable (FX, restricted cash); larger gaps indicate an extraction error on one of the two pages.
 
 ```python
 warnings = []
@@ -969,7 +1145,17 @@ If a locator consistently fails on a filing class, harden the locator — do not
 - Both parts process one PDF at a time. For batch processing, integrate with the main pipeline in `Merge Data/pipeline.py`.
 - Part A stores all monetary values as integers in whole pounds (no pence).
 - Part A's JSON output is compatible with the `companies` table schema in Supabase.
-- EasyOCR model download happens on first run (~100MB). Subsequent runs use the cached model. If both Part A and Part B run on the same document, share a single `reader` instance.
-- Processing time: Part A is ~30-60 seconds per PDF (OCR is the bottleneck). Part B on a born-digital PDF is seconds; on a fully scanned PDF it reuses Part A's OCR pass so the marginal cost is small.
+- OCR backend is Tesseract via `pytesseract` (subprocess-based, no native DLL loading — avoids Windows Smart App Control blocks). Requires the Tesseract binary installed separately (`winget install UB-Mannheim.TesseractOCR` on Windows). No model download needed — Tesseract ships with `eng.traineddata` out of the box.
+- Processing time: With two-pass Tesseract OCR, Part A is ~5-15 seconds per scanned PDF. Born-digital PDFs take seconds. Part B on a born-digital PDF is seconds; on a scanned PDF it reuses Part A's OCR pass so the marginal cost is small.
 - Part A was verified against LLM-based extraction on the Heights Management test PDF with 40/40 field checks passing (100% accuracy).
 - Part B's statutory-phrase approach was validated on the John Lewis plc 2025 annual report at 13/13 sections found and 12/13 page ranges exact — see the diagnostic run for full provenance.
+
+## Pre-pipeline filing filters
+
+Before downloading or parsing any filing, apply these filters to avoid wasting compute:
+
+1. **Filing type filter.** Companies House returns all account-related filings under `category=accounts`, including administrative forms (AA01 = change of accounting reference date, etc.). Only process filings with `type == "AA"` (actual annual accounts). All other types contain no financial data.
+
+2. **Pre-2015 date filter.** Skip any filing dated before 2015. The label maps (UK GAAP FRS 102, IFRS) target post-2015 terminology. Pre-FRS-102 filings use different vocabulary (e.g., "profit on ordinary activities" vs "profit before taxation") and OCR time on them is wasted on unextractable content.
+
+3. **Initial backfill strategy.** For the initial dataset build, fetch `count=1` (latest filing only) per company. This validates extraction across the full dataset before committing to multi-year history. Historical backfill (`count=5`) can be enabled later once the latest year is confirmed working.

@@ -170,8 +170,8 @@ def get_test_companies(supabase, limit=10):
     result = (
         supabase.table("companies")
         .select("company_number, company_name")
-        .eq("metadata->pipeline->>status", "pending")
-        .eq("metadata->>company_status", "Active")
+        .eq("pipeline_status", "pending")
+        .eq("company_status", "Active")
         .limit(limit)
         .execute()
     )

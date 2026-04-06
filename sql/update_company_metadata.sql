@@ -1,17 +1,21 @@
 -- RPC function: deep-merge a JSONB patch into companies.metadata
 -- Run this in the Supabase SQL Editor before using the pipeline.
 --
--- Usage from Python:
+-- NOTE: This function is ONLY used for writing to the metadata JSONB column
+-- (derived ratios, cross-period metrics, validation_warnings, CSV overflow
+-- fields). All typed columns (revenue, pipeline_status, etc.) are written
+-- via direct UPDATE statements — see update_company() in pipeline.py.
+--
+-- Usage from Python (via update_company_metadata_blob):
 --   supabase.rpc("update_company_metadata", {
 --       "p_company_number": "12345678",
---       "p_patch": {"pipeline": {"status": "failed"}}
+--       "p_patch": {"gross_margin_pct": 0.42, "current_ratio": 1.8}
 --   }).execute()
 --
 -- Merge behaviour:
 --   - Top-level keys in the patch overwrite the same key in metadata.
 --   - If BOTH sides of a key are JSON objects, they are shallow-merged
---     (so {"pipeline": {"status": "failed"}} merges into an existing
---      pipeline object without wiping other pipeline keys).
+--     (so nested objects merge without wiping sibling keys).
 --   - All other types (strings, numbers, arrays, nulls) are overwritten.
 
 CREATE OR REPLACE FUNCTION update_company_metadata(

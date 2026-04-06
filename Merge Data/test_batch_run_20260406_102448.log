@@ -1,0 +1,105 @@
+2026-04-06 10:24:49 [INFO] Connected to Supabase. Fetching MEDIUM/LARGE pending companies...
+2026-04-06 10:24:50 [INFO] HTTP Request: GET https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?select=company_number%2Ccompany_name%2Caccounts_category&pipeline_status=eq.pending&accounts_category=in.%28MEDIUM%2CLARGE%29&limit=5 "HTTP/2 200 OK"
+2026-04-06 10:24:50 [INFO] Got 5 MEDIUM/LARGE companies to process.
+2026-04-06 10:24:50 [INFO] [1/5] Processing 15413030 (28 YEARS LATER LIMITED) [MEDIUM]
+2026-04-06 10:24:52 [INFO]   Filing format: scanned_pdf
+2026-04-06 10:24:53 [INFO]     Filing 1: 2025-07-07 (503633 bytes, scanned_pdf)
+2026-04-06 10:24:54 [WARNING]     Filing 1 PDF parse failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2026-04-06 10:24:54 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 10:24:54 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.15413030 "HTTP/2 200 OK"
+2026-04-06 10:24:54 [INFO]   [timing] company 15413030 took 4.2s
+2026-04-06 10:24:54 [INFO] [2/5] Processing SC315316 (3D PERSONNEL LIMITED) [MEDIUM]
+2026-04-06 10:24:55 [INFO]   Filing format: ixbrl
+2026-04-06 10:24:57 [INFO]     Filing 1: 2025-09-25 (446384 bytes)
+2026-04-06 10:24:57 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.SC315316 "HTTP/2 200 OK"
+2026-04-06 10:24:57 [INFO] HTTP Request: POST https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/rpc/update_company_metadata "HTTP/2 204 No Content"
+2026-04-06 10:24:57 [INFO]   Extracted and saved — revenue=25763452.0 ebitda=360629.0
+2026-04-06 10:24:57 [INFO]   [timing] company SC315316 took 2.8s
+2026-04-06 10:24:57 [INFO] [3/5] Processing 07245019 (3G TRUCK & TRAILER PARTS LTD) [MEDIUM]
+2026-04-06 10:24:58 [INFO]   Filing format: scanned_pdf
+2026-04-06 10:25:00 [INFO]     Filing 1: 2025-09-22 (900588 bytes, scanned_pdf)
+2026-04-06 10:25:00 [WARNING]     Filing 1 PDF parse failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2026-04-06 10:25:00 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 10:25:00 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.07245019 "HTTP/2 200 OK"
+2026-04-06 10:25:00 [INFO]   [timing] company 07245019 took 2.7s
+2026-04-06 10:25:00 [INFO] [4/5] Processing 05887440 (3P INNOVATION LIMITED) [MEDIUM]
+2026-04-06 10:25:01 [INFO]   Filing format: scanned_pdf
+2026-04-06 10:25:02 [INFO]     Filing 1: 2026-03-18 (1110963 bytes, scanned_pdf)
+2026-04-06 10:25:02 [WARNING]     Filing 1 PDF parse failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2026-04-06 10:25:02 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 10:25:02 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.05887440 "HTTP/2 200 OK"
+2026-04-06 10:25:02 [INFO]   [timing] company 05887440 took 2.7s
+2026-04-06 10:25:02 [INFO] [5/5] Processing OC401440 (4C HOTELS   MINORIES LLP) [MEDIUM]
+2026-04-06 10:25:04 [INFO]   Filing format: scanned_pdf
+2026-04-06 10:25:05 [INFO]     Filing 1: 2025-12-30 (671612 bytes, scanned_pdf)
+2026-04-06 10:25:05 [WARNING]     Filing 1 PDF parse failed: tesseract is not installed or it's not in your PATH. See README file for more information.
+2026-04-06 10:25:05 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 10:25:05 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.OC401440 "HTTP/2 200 OK"
+2026-04-06 10:25:05 [INFO]   [timing] company OC401440 took 2.7s
+2026-04-06 10:25:05 [INFO] --- Batch summary ---
+2026-04-06 10:25:05 [INFO]   extracted_ixbrl  1
+2026-04-06 10:25:05 [INFO]   failed           4
+2026-04-06 10:25:05 [INFO] ---------------------
+2026-04-06 10:25:05 [INFO] 
+=== Post-batch verification ===
+2026-04-06 10:25:05 [INFO] HTTP Request: GET https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?select=company_number%2Ccompany_name%2Caccounts_category%2Cpipeline_status%2Cfiling_format%2Clast_accounts_date%2Crevenue%2Cebitda%2Cebitda_margin%2Cfcf%2Ccash_conversion%2Cemployees%2Crevenue_cagr_5y&company_number=in.%2815413030%2CSC315316%2C07245019%2C05887440%2COC401440%29 "HTTP/2 200 OK"
+
+  05887440 (3P INNOVATION LIMITED) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2026-03-18
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  07245019 (3G TRUCK & TRAILER PARTS LTD) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2025-09-22
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  15413030 (28 YEARS LATER LIMITED) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2025-07-07
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  OC401440 (4C HOTELS   MINORIES LLP) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2025-12-30
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  SC315316 (3D PERSONNEL LIMITED) [MEDIUM]
+    pipeline_status:    extracted
+    filing_format:      ixbrl
+    last_accounts_date: 2025-09-25
+    revenue:            25763452.0
+    ebitda:             360629.0
+    ebitda_margin:      0.014
+    fcf:                None
+    cash_conversion:    None
+    employees:          36
+    revenue_cagr_5y:    None

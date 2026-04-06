@@ -46,17 +46,14 @@ def main():
     log.info("Finding iXBRL-eligible companies...")
     result = (
         supabase.table("companies")
-        .select("company_number, company_name, metadata")
+        .select("company_number, company_name, accounts_category, pipeline_status")
+        .in_("accounts_category", ["MEDIUM", "LARGE"])
+        .eq("pipeline_status", "pending")
         .limit(200)
         .execute()
     )
 
-    # Filter to MEDIUM/LARGE pending companies
-    candidates = [
-        c for c in result.data
-        if c.get("metadata", {}).get("accounts_category") in ("MEDIUM", "LARGE")
-        and c.get("metadata", {}).get("pipeline", {}).get("status") == "pending"
-    ]
+    candidates = result.data
 
     ixbrl_count = 0
     for company in candidates:
@@ -82,7 +79,7 @@ def main():
             continue
 
         log.info("  Found %d filings, parsing...", len(filings))
-        extracted, filing_format, last_date = parse_ixbrl_multi(cn, filings)
+        extracted, filing_format, last_date, ixbrl_sections = parse_ixbrl_multi(cn, filings)
         if extracted is None:
             log.info("  Parser returned None")
             continue

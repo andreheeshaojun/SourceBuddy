@@ -1,0 +1,104 @@
+2026-04-06 09:55:39 [INFO] Connected to Supabase. Fetching MEDIUM/LARGE pending companies...
+2026-04-06 09:55:40 [INFO] HTTP Request: GET https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?select=company_number%2Ccompany_name%2Caccounts_category&pipeline_status=eq.pending&accounts_category=in.%28MEDIUM%2CLARGE%29&limit=5 "HTTP/2 200 OK"
+2026-04-06 09:55:40 [INFO] Got 5 MEDIUM/LARGE companies to process.
+2026-04-06 09:55:40 [INFO] [1/5] Processing OC421575 (BREGAL MILESTONE LLP) [MEDIUM]
+2026-04-06 09:55:41 [INFO]   Filing format: scanned_pdf
+2026-04-06 09:55:46 [INFO]     Filing 1: 2025-09-05 (646559 bytes, scanned_pdf)
+2026-04-06 09:55:46 [WARNING]     Filing 1 PDF parse failed: [WinError 4551] An Application Control policy has blocked this file. Error loading "C:\Users\Andre Hee\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\lib\c10.dll" or one of its dependencies.
+2026-04-06 09:55:46 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 09:55:46 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.OC421575 "HTTP/2 200 OK"
+2026-04-06 09:55:46 [INFO]   [timing] company OC421575 took 6.9s
+2026-04-06 09:55:46 [INFO] [2/5] Processing 08892086 (1ENV SOLUTIONS LIMITED) [MEDIUM]
+2026-04-06 09:55:48 [INFO]   Filing format: electronic_pdf
+2026-04-06 09:55:49 [INFO]     Filing 1: 2025-11-05 (80239 bytes, electronic_pdf)
+2026-04-06 09:55:49 [INFO]     Filing 1 yielded no usable financials
+2026-04-06 09:55:49 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 09:55:49 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.08892086 "HTTP/2 200 OK"
+2026-04-06 09:55:49 [INFO]   [timing] company 08892086 took 2.6s
+2026-04-06 09:55:49 [INFO] [3/5] Processing 02144435 (02144435 LIMITED) [MEDIUM]
+2026-04-06 09:55:50 [INFO]   Filing format: scanned_pdf
+2026-04-06 09:55:50 [INFO]     Filing 1: 2008-04-03 — skipping (pre-2015)
+2026-04-06 09:55:50 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 09:55:50 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.02144435 "HTTP/2 200 OK"
+2026-04-06 09:55:50 [INFO]   [timing] company 02144435 took 1.3s
+2026-04-06 09:55:50 [INFO] [4/5] Processing 08965471 (2 EXCEL ENGINEERING LIMITED) [MEDIUM]
+2026-04-06 09:55:52 [INFO]   Filing format: ixbrl
+2026-04-06 09:55:53 [INFO]     Filing 1: 2025-03-31 (514206 bytes)
+2026-04-06 09:55:53 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.08965471 "HTTP/2 200 OK"
+2026-04-06 09:55:53 [INFO] HTTP Request: POST https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/rpc/update_company_metadata "HTTP/2 204 No Content"
+2026-04-06 09:55:53 [INFO]   Extracted and saved — revenue=22441491.0 ebitda=545042.0
+2026-04-06 09:55:53 [INFO]   [timing] company 08965471 took 2.9s
+2026-04-06 09:55:53 [INFO] [5/5] Processing 02004364 (2 HEADS GLOBAL DESIGN LIMITED) [MEDIUM]
+2026-04-06 09:55:55 [INFO]   Filing format: electronic_pdf
+2026-04-06 09:55:56 [INFO]     Filing 1: 2026-02-20 (80222 bytes, electronic_pdf)
+2026-04-06 09:55:56 [INFO]     Filing 1 yielded no usable financials
+2026-04-06 09:55:56 [WARNING]   PDF parsing returned no data — marking failed
+2026-04-06 09:55:56 [INFO] HTTP Request: PATCH https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?company_number=eq.02004364 "HTTP/2 200 OK"
+2026-04-06 09:55:56 [INFO]   [timing] company 02004364 took 2.6s
+2026-04-06 09:55:56 [INFO] --- Batch summary ---
+2026-04-06 09:55:56 [INFO]   extracted_ixbrl  1
+2026-04-06 09:55:56 [INFO]   failed           4
+2026-04-06 09:55:56 [INFO] ---------------------
+2026-04-06 09:55:56 [INFO] 
+=== Post-batch verification ===
+2026-04-06 09:55:56 [INFO] HTTP Request: GET https://inqwlidpatcqckvdqtcn.supabase.co/rest/v1/companies?select=company_number%2Ccompany_name%2Caccounts_category%2Cpipeline_status%2Cfiling_format%2Clast_accounts_date%2Crevenue%2Cebitda%2Cebitda_margin%2Cfcf%2Ccash_conversion%2Cemployees%2Crevenue_cagr_5y&company_number=in.%28OC421575%2C08892086%2C02144435%2C08965471%2C02004364%29 "HTTP/2 200 OK"
+
+  02004364 (2 HEADS GLOBAL DESIGN LIMITED) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      electronic_pdf
+    last_accounts_date: 2026-02-20
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  02144435 (02144435 LIMITED) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2008-04-03
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  08892086 (1ENV SOLUTIONS LIMITED) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      electronic_pdf
+    last_accounts_date: 2025-11-05
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None
+
+  08965471 (2 EXCEL ENGINEERING LIMITED) [MEDIUM]
+    pipeline_status:    extracted
+    filing_format:      ixbrl
+    last_accounts_date: 2025-03-31
+    revenue:            22441491.0
+    ebitda:             545042.0
+    ebitda_margin:      0.0243
+    fcf:                -531169.0
+    cash_conversion:    -0.9745
+    employees:          201
+    revenue_cagr_5y:    None
+
+  OC421575 (BREGAL MILESTONE LLP) [MEDIUM]
+    pipeline_status:    failed
+    filing_format:      scanned_pdf
+    last_accounts_date: 2025-09-05
+    revenue:            None
+    ebitda:             None
+    ebitda_margin:      None
+    fcf:                None
+    cash_conversion:    None
+    employees:          None
+    revenue_cagr_5y:    None

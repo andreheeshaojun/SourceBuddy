@@ -303,6 +303,17 @@ _DERIVATIONS: list[dict] = [
         ),
     },
     {
+        # Fallback: use operating_loss when operating_profit is absent
+        "name": "ebitda",
+        "requires": ["operating_loss", "depreciation", "amortisation"],
+        "fn": lambda r: (
+            None if _g(r, "operating_profit") is not None
+            else _g(r, "operating_loss")
+            + abs(_g(r, "depreciation"))
+            + abs(_g(r, "amortisation"))
+        ),
+    },
+    {
         "name": "ebitda_margin",
         "requires": ["ebitda", "revenue"],
         "fn": lambda r: _safe_div(_g(r, "ebitda"), _g(r, "revenue")),
@@ -347,6 +358,7 @@ _DERIVATIONS: list[dict] = [
         "requires": ["fcf", "ebitda"],
         "fn": lambda r: (
             None if _g(r, "ebitda") is None or _g(r, "ebitda") <= 0
+            else 0 if _g(r, "fcf") is not None and _g(r, "fcf") < 0
             else _safe_div(_g(r, "fcf"), _g(r, "ebitda"))
         ),
     },

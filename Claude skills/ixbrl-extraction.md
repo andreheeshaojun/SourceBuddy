@@ -304,12 +304,17 @@ After the main computation, two legacy derivations are run as fallbacks (in case
 
 ### Stage 7 — Persist to Supabase
 
+Results are split into two writes:
+
 ```python
-def update_company(supabase, company_number, metadata_patch):
-    """Deep-merge metadata_patch into the company's metadata JSONB."""
+# Typed columns (revenue, ebitda, pipeline_status, statements, etc.)
+update_company(supabase, company_number, column_dict)
+
+# Derived ratios, YoY/CAGR, validation_warnings → metadata JSONB
+update_company_metadata_blob(supabase, company_number, metadata_patch)
 ```
 
-Calls the `update_company_metadata` Postgres RPC (defined in `sql/update_company_metadata.sql`) which performs a recursive JSONB merge. This means partial updates don't clobber existing metadata, and multiple fields can be written independently.
+`update_company` performs a direct column UPDATE. `update_company_metadata_blob` calls the `update_company_metadata` Postgres RPC (defined in `sql/update_company_metadata.sql`) which deep-merges into the `metadata` JSONB column only. See `_build_write_payload()` in `pipeline.py` for the exact routing of fields.
 
 ---
 

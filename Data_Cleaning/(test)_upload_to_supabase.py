@@ -1,11 +1,9 @@
 """
 Upload FilteredCompanyData.csv to the Supabase `companies` table.
 
-Maps:  CompanyNumber  → company_number  (top-level column)
-       CompanyName    → company_name    (top-level column)
-       everything else → metadata JSONB
-
-Every row gets  metadata.pipeline.status = 'pending'.
+Maps CSV columns to typed top-level columns where they exist.
+Remaining address fields go into the metadata JSONB blob.
+Every row gets  pipeline_status = 'pending'.
 """
 
 import json
@@ -39,15 +37,20 @@ df = df.fillna("").replace(["nan", "NaN", "None"], "")
 # Build rows for the new schema
 # ---------------------------------------------------------------------------
 
-# CSV columns that map to metadata keys
-METADATA_MAP = {
+# CSV columns that map to typed top-level columns
+COLUMN_MAP = {
     "SICCode.SicText_1":            "sic_code_1",
     "SICCode.SicText_2":            "sic_code_2",
-    "SICCode.SicText_3":            "sic_code_3",
-    "SICCode.SicText_4":            "sic_code_4",
     "CompanyStatus":                "company_status",
     "Accounts.AccountCategory":     "accounts_category",
     "IncorporationDate":            "incorporation_date",
+    "CompanyCategory":              "company_category",
+}
+
+# CSV columns that go into the metadata JSONB (no typed column for these)
+METADATA_MAP = {
+    "SICCode.SicText_3":            "sic_code_3",
+    "SICCode.SicText_4":            "sic_code_4",
     "RegAddress.PostCode":          "postcode",
     "RegAddress.AddressLine1":      "address_line_1",
     "RegAddress.AddressLine2":      "address_line_2",
@@ -56,7 +59,6 @@ METADATA_MAP = {
     "RegAddress.Country":           "country",
     "RegAddress.CareOf":            "care_of",
     "RegAddress.POBox":             "po_box",
-    "CompanyCategory":              "company_category",
     "CountryOfOrigin":              "country_of_origin",
     "Accounts.AccountRefDay":       "account_ref_day",
     "Accounts.AccountRefMonth":     "account_ref_month",
@@ -66,22 +68,30 @@ METADATA_MAP = {
 
 
 def row_to_record(row):
-    """Convert a CSV row to the {company_number, company_name, metadata} shape."""
-    metadata = {}
-
-    for csv_col, meta_key in METADATA_MAP.items():
-        val = row.get(csv_col, "")
-        if val:                       # skip blanks
-            metadata[meta_key] = val
-
-    # Pipeline status — always pending for fresh uploads
-    metadata["pipeline"] = {"status": "pending"}
-
-    return {
+    """Convert a CSV row to a dict matching the companies table schema."""
+    record = {
         "company_number": row["CompanyNumber"],
         "company_name":   row["CompanyName"],
-        "metadata":       metadata,
+        "pipeline_status": "pending",
     }
+
+    # Typed top-level columns
+    for csv_col, col_name in COLUMN_MAP.items():
+        val = row.get(csv_col, "")
+        if val:
+            record[col_name] = val
+
+    # Remaining fields into metadata JSONB
+    metadata = {}
+    for csv_col, meta_key in METADATA_MAP.items():
+        val = row.get(csv_col, "")
+        if val:
+            metadata[meta_key] = val
+
+    if metadata:
+        record["metadata"] = metadata
+
+    return record
 
 
 # ---------------------------------------------------------------------------
