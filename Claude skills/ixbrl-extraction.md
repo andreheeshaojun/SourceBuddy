@@ -235,10 +235,11 @@ CASH_FLOW_FIELDS = [
 ```
 
 **Display columns (scalar, current year):**
-- `revenue` — current-year revenue.
-- `ebitda` — derived as `operating_profit + |depreciation| + |amortisation|`. Absolute values handle taxonomies that tag depreciation and amortisation already negative.
+- `revenue` — current-year revenue. For non-trading entities (holding companies) where `TurnoverRevenue` is nil, a gap-fill sums `other_operating_income + income_from_group_undertakings` as a proxy.
+- `ebitda` — derived as `operating_profit + |depreciation| + |amortisation|`. Missing D&A treated as 0 (not blocking). When both D&A are absent, EBITDA = operating_profit (logged as `ebitda_method: "approximated"`). When only one of D&A is present, the missing one is treated as 0 (logged as `ebitda_method: "partial"`). Key tag additions: `DepreciationAmortisationExpense` (combined D&A, most common), `IncreaseFromDepreciationChargeForYearPropertyPlantEquipment` (PPE note total), `IncreaseFromAmortisationChargeForYearIntangibleAssets` (intangibles note total).
 - `employees` — current-year `AverageNumberEmployeesDuringPeriod`.
 - `fcf` — derived as `operating_cash_flow - |capex_ppe| - |capex_intangibles|`.
+- `cash_conversion` — `fcf / ebitda`. Returns `None` when EBITDA ≤ 0 or FCF < 0 (meaningless ratios).
 
 **History columns (JSONB, one value per year):**
 - `revenue_history`, `ebitda_history`, `fcf_history`, `employees_history` — same formulas applied per year where the inputs exist.
@@ -336,9 +337,17 @@ IXBRL_TAG_MAP = {
 ```
 
 **Current state (post-refactor from flat layout):**
-- **275 tag keys** across all tiers → **63 canonical fields**.
+- **~280 tag keys** across all tiers → **65+ canonical fields**.
 - Keys are the **local name** of the iXBRL tag (the part after the namespace colon).
 - Sourced from: FRC taxonomy schemas at `xbrl.frc.org.uk`, HMRC CT taxonomy, IFRS taxonomy (as adopted for UK filing), and tag names observed in real Companies House filings.
+
+**Recent additions (high-impact tags found missing during 20-company batch testing):**
+- `DepreciationAmortisationExpense` → `depreciation` — combined D&A tag, present in ~60% of filings. Was the #1 reason for `ebitda_approx`.
+- `IncreaseFromDepreciationChargeForYearPropertyPlantEquipment` → `depreciation` — PPE note total (non-dimensional context).
+- `IncreaseFromAmortisationChargeForYearIntangibleAssets` → `amortisation` — intangibles note total.
+- `OtherOperatingIncomeFormat1` / `Format2` → `other_operating_income` — UK GAAP Format 1/2 variants.
+- `IncomeFromSharesInGroupUndertakings` → `income_from_group_undertakings` — holding company dividend/management fee income.
+- `OtherInterestReceivableSimilarIncomeFinanceIncome` → `finance_income` — FRS 102 interest receivable variant.
 
 **Lookup order at parse time (Stage 4b step 3):**
 1. Resolve the tag's prefix → taxonomy family.

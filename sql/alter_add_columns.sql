@@ -6,3 +6,6 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS filing_format TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS last_accounts_date DATE;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS company_status TEXT;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS accounts_category TEXT;
+
+-- Sector classification (populated by backfill_sectors.py from SIC codes)
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS sub_sector TEXT;

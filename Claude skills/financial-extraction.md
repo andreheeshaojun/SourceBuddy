@@ -44,11 +44,11 @@ This is the primary table. One row per company. It serves both the pipeline and 
 | Column | Type | Source |
 |---|---|---|
 | `revenue` | numeric | Pipeline (iXBRL extraction) |
-| `ebitda` | numeric | Pipeline (derived: operating_profit + depreciation + amortisation) |
+| `ebitda` | numeric | Pipeline (derived: operating_profit + depreciation + amortisation; fallback: operating_profit alone when D&A unavailable) |
 | `ebitda_margin` | numeric | Pipeline (derived: ebitda / revenue) |
 | `fcf` | numeric | Pipeline (derived: operating_cash_flow - capex) |
-| `cash_conversion` | numeric | Pipeline (derived: fcf / ebitda) |
-| `employees` | integer | Pipeline (iXBRL extraction) |
+| `cash_conversion` | numeric | Pipeline (derived: fcf / ebitda; None when EBITDA ≤ 0 or FCF < 0) |
+| `employees` | integer | Pipeline (iXBRL: `AverageNumberEmployeesDuringPeriod` tag; PDF: `extract_employees_from_notes()` parses Staff costs / Employees note, sums sub-categories if no total row) |
 | `revenue_cagr_5y` | numeric | Pipeline (5-year compound annual growth rate) |
 
 **History (JSONB, keyed by year string e.g. `{"2021": 1500000, "2022": 1700000}`):**
@@ -128,13 +128,17 @@ The computation pipeline runs on the extracted data in this order:
 1. **Sign normalisation** — flip values that violate sign conventions (e.g. costs must be negative, revenue must be positive).
 2. **Gap-fills** — derive missing values algebraically (e.g. gross_profit = revenue + cost_of_sales, net_assets = total_assets + total_liabilities). 15 rules, never overwrites existing values.
 3. **Single-row derivations** — compute 20 analytical metrics per year: margins (gross, operating, net, EBITDA), returns (ROA, ROE), cash flow metrics (FCF, cash conversion, capex ratios), leverage (net debt, debt-to-equity, interest cover), liquidity (current ratio, quick ratio), efficiency (asset turnover, revenue/profit per employee).
+   - **EBITDA** = `operating_profit + |depreciation or 0| + |amortisation or 0|`. Single rule — missing D&A treated as 0, not blocking. Logged as: `ebitda_method: "approximated"` (both D&A absent), `"partial"` (one of D&A absent), or omitted (both present, standard calculation). Key iXBRL tags for D&A: `DepreciationAmortisationExpense` (combined, most common), `IncreaseFromDepreciationChargeForYearPropertyPlantEquipment` (PPE note total), `IncreaseFromAmortisationChargeForYearIntangibleAssets`.
+   - **Revenue gap-fill for non-trading entities**: when `TurnoverRevenue` is nil/absent but `other_operating_income` or `income_from_group_undertakings` exist, revenue is gap-filled as their sum (holding companies, management fee entities).
+   - **Cash conversion** = `fcf / ebitda`, but guarded: returns `None` when EBITDA ≤ 0 (meaningless ratio) or when FCF < 0. The legacy fallback in `calculate_derived_metrics` applies the same guards (ebitda > 0, fcf < 0 → None).
+   - **PDF D&A sourcing**: For scanned PDFs, depreciation/amortisation come from cash flow add-back lines or notes pages. `_normalise_pdf_extraction` lifts D&A values from the nested `notes.creditors.depreciation` structure into the `income_statement` year rows where `compute()` can find them.
 4. **Validations** — 6 consistency checks (balance sheet balances, P&L ties out, cash flow reconciles). Failures are logged to `validation_warnings`, not treated as extraction errors.
 5. **Cross-period metrics** — YoY growth (revenue, EBITDA, profit) and CAGR (3-year, 5-year) computed across years.
 
 **6. Write results to Supabase.**
 
 Results are split into two writes:
-- **Typed columns** (via `update_company`): revenue, ebitda, ebitda_margin, fcf, cash_conversion, employees, revenue_cagr_5y, all history JSONB, all statement JSONB, derivation_log, filing_format, last_accounts_date, pipeline_status = `extracted`.
+- **Typed columns** (via `update_company`): revenue, ebitda, ebitda_margin, fcf, cash_conversion, employees, revenue_cagr_5y, all history JSONB, all statement JSONB, derivation_log, filing_format, last_accounts_date, pipeline_status = `extracted`. **All typed columns are always written, including `None` values**, so that re-runs clear stale data from previous extractions (e.g. a cash_conversion that was incorrectly set).
 - **Metadata JSONB** (via `update_company_metadata_blob`): all derived ratios, YoY growth rates, CAGR variants, validation_warnings.
 
 If any step fails, set `pipeline_status` to `failed` and log the error.

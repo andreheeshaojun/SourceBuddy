@@ -7,7 +7,7 @@ import sys
 import time
 import json
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "Merge Data"))
 
 import requests
 from pipeline import (

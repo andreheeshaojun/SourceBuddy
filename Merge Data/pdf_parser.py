@@ -45,21 +45,38 @@ INCOME_LABEL_MAP_UKGAAP: dict[str, str] = {
     "revenue": "turnover",
     "cost of sales": "cost_of_sales",
     "gross profit": "gross_profit",
+    "gross loss": "gross_profit",
     "distribution costs": "distribution_costs",
     "administrative expenses": "administrative_expenses",
     "admin expenses": "administrative_expenses",
     "other operating income": "other_operating_income",
     "operating profit": "operating_profit",
+    "operating loss": "operating_profit",
+    "operating (loss)/ profit": "operating_profit",
+    "operating profit/(loss)": "operating_profit",
+    "(loss)/profit from operations": "operating_profit",
+    "profit/(loss) from operations": "operating_profit",
     "interest receivable": "interest_receivable",
     "interest payable": "interest_payable",
     "finance income": "interest_receivable",
     "finance cost": "interest_payable",
     "profit before tax": "profit_before_taxation",
+    "loss before tax": "profit_before_taxation",
+    "(loss)/profit before tax": "profit_before_taxation",
+    "profit/(loss) before tax": "profit_before_taxation",
+    "(loss)/profit on ordinary activities before taxation": "profit_before_taxation",
     "tax on profit": "tax_on_profit",
+    "tax on loss": "tax_on_profit",
     "taxation": "tax_on_profit",
+    "tax credit": "tax_on_profit",
     "profit for the financial year": "profit_for_financial_year",
+    "loss for the financial year": "profit_for_financial_year",
     "profit for the year": "profit_for_financial_year",
+    "loss for the year": "profit_for_financial_year",
+    "(loss)/profit for the year": "profit_for_financial_year",
+    "profit/(loss) for the year": "profit_for_financial_year",
     "profit after tax": "profit_for_financial_year",
+    "loss after tax": "profit_for_financial_year",
 }
 
 BALANCE_LABEL_MAP_UKGAAP: dict[str, str] = {
@@ -91,16 +108,26 @@ INCOME_LABEL_MAP_IFRS: dict[str, str] = {
     "administrative expenses": "administrative_expenses",
     "operating profit": "operating_profit",
     "operating loss": "operating_profit",
+    "operating (loss)/ profit": "operating_profit",
+    "operating profit/(loss)": "operating_profit",
+    "(loss)/profit from operations": "operating_profit",
+    "profit/(loss) from operations": "operating_profit",
     "finance income": "finance_income",
     "finance cost": "finance_costs",
     "finance costs": "finance_costs",
     "profit before tax": "profit_before_taxation",
     "loss before tax": "profit_before_taxation",
+    "(loss)/profit before tax": "profit_before_taxation",
+    "profit/(loss) before tax": "profit_before_taxation",
     "taxation": "taxation",
     "tax expense": "taxation",
+    "tax credit": "taxation",
     "profit for the financial year": "profit_for_financial_year",
     "profit for the year": "profit_for_financial_year",
     "loss for the financial year": "profit_for_financial_year",
+    "loss for the year": "profit_for_financial_year",
+    "(loss)/profit for the year": "profit_for_financial_year",
+    "profit/(loss) for the year": "profit_for_financial_year",
 }
 
 BALANCE_LABEL_MAP_IFRS: dict[str, str] = {
@@ -143,6 +170,18 @@ BALANCE_LABEL_MAP_IFRS: dict[str, str] = {
 }
 
 CASHFLOW_LABEL_MAP: dict[str, str] = {
+    # --- Operating activities: depreciation & amortisation add-backs ---
+    "depreciation of tangible fixed assets": "depreciation",
+    "depreciation of tangible assets": "depreciation",
+    "depreciation of property, plant and equipment": "depreciation",
+    "depreciation charge": "depreciation",
+    "depreciation and amortisation": "depreciation",
+    "depreciation and impairment": "depreciation",
+    "amortisation of intangible assets": "amortisation",
+    "amortisation of intangible fixed assets": "amortisation",
+    "amortisation of goodwill": "amortisation",
+    "amortisation charge": "amortisation",
+
     # --- Operating activities: final sub-total ---
     # Most-specific first: "net cash ... from operating" beats "cash generated"
     "net cash from operating activities": "operating_cash_flow",
@@ -244,6 +283,14 @@ NOTES_LABEL_MAP: dict[str, str] = {
     "wages and salaries": "wages_and_salaries",
     "social security costs": "social_security_costs",
     "pension costs": "pension_costs",
+    # --- Depreciation & Amortisation (tangible/intangible fixed asset notes) ---
+    "depreciation charge for the year": "depreciation",
+    "depreciation charged in the year": "depreciation",
+    "depreciation for the year": "depreciation",
+    "charge for the year": "depreciation",
+    "amortisation charge for the year": "amortisation",
+    "amortisation charged in the year": "amortisation",
+    "amortisation for the year": "amortisation",
 }
 
 
@@ -312,7 +359,7 @@ def parse_number(s: str):
 # Step 1 — Get text + bounding boxes (two paths, one data shape)
 # ---------------------------------------------------------------------------
 
-def _load_pages_text_layer(doc: fitz.Document) -> tuple[dict[int, list], float]:
+def _load_pages_text_layer(doc: fitz.Document) -> tuple[dict[int, list], float, float]:
     """Path A — born-digital, convert text-layer spans to (bbox, text, conf)."""
     all_pages: dict[int, list] = {}
     for pi in range(doc.page_count):
@@ -331,7 +378,8 @@ def _load_pages_text_layer(doc: fitz.Document) -> tuple[dict[int, list], float]:
                     items.append((poly, t, 1.0))
         all_pages[pi + 1] = items
     page_width = doc[0].rect.width
-    return all_pages, page_width
+    page_height = doc[0].rect.height
+    return all_pages, page_width, page_height
 
 
 def _tesseract_ocr(img: Image.Image) -> list:
@@ -527,7 +575,7 @@ def _identify_pass2_targets(top_band_pages: dict[int, list]) -> set[int]:
     return targets
 
 
-def _load_pages_ocr(doc: fitz.Document) -> tuple[dict[int, list], float]:
+def _load_pages_ocr(doc: fitz.Document) -> tuple[dict[int, list], float, float]:
     """Path B — scanned / no text layer.
 
     Two-pass strategy:
@@ -549,7 +597,10 @@ def _load_pages_ocr(doc: fitz.Document) -> tuple[dict[int, list], float]:
     all_pages: dict[int, list] = dict(top_pages)
     for pnum, items in full_pages.items():
         all_pages[pnum] = items
-    return all_pages, page_width
+    # Page height at 2x to stay consistent with page_width and pass-2 coords.
+    mat2 = fitz.Matrix(_PASS2_ZOOM, _PASS2_ZOOM)
+    page_height = doc[0].get_pixmap(matrix=mat2).height
+    return all_pages, page_width, page_height
 
 
 def _open_doc(pdf_path_or_bytes) -> fitz.Document:
@@ -559,11 +610,14 @@ def _open_doc(pdf_path_or_bytes) -> fitz.Document:
     return fitz.open(pdf_path_or_bytes)
 
 
-def load_pages(pdf_path_or_bytes) -> tuple[dict[int, list], float, str]:
+def load_pages(pdf_path_or_bytes) -> tuple[dict[int, list], float, float, str]:
     """Probe the text layer and route to Path A or Path B.
 
-    Accepts a file path or raw bytes. Returns (all_pages, page_width, source)
-    where source is 'text' or 'ocr'.
+    Accepts a file path or raw bytes. Returns (all_pages, page_width,
+    page_height, source) where source is 'text' or 'ocr'.  page_height is
+    in the same coordinate space as item coordinates (PDF points for
+    text-layer, 2x pixel-space for OCR) and is used by top_band_text for
+    absolute cutoff calculations.
     """
     doc = _open_doc(pdf_path_or_bytes)
     try:
@@ -572,14 +626,14 @@ def load_pages(pdf_path_or_bytes) -> tuple[dict[int, list], float, str]:
             for i in range(min(5, doc.page_count))
         )
         if has_text_layer:
-            all_pages, page_width = _load_pages_text_layer(doc)
+            all_pages, page_width, page_height = _load_pages_text_layer(doc)
             source = "text"
         else:
-            all_pages, page_width = _load_pages_ocr(doc)
+            all_pages, page_width, page_height = _load_pages_ocr(doc)
             source = "ocr"
     finally:
         doc.close()
-    return all_pages, page_width, source
+    return all_pages, page_width, page_height, source
 
 
 # ---------------------------------------------------------------------------
@@ -590,23 +644,57 @@ def page_text(all_pages: dict[int, list], page_num: int) -> str:
     return " ".join(t for _, t, _ in all_pages.get(page_num, []))
 
 
-def top_band_text(all_pages: dict[int, list], page_num: int, frac: float = 0.08) -> str:
-    """Return uppercased text from the top `frac` of the page only."""
+def top_band_text(
+    all_pages: dict[int, list],
+    page_num: int,
+    frac: float = 0.15,
+    page_height: float | None = None,
+) -> str:
+    """Return uppercased text from the top portion of the page.
+
+    When *page_height* is provided the cutoff is ``page_height * frac``
+    (absolute — independent of where items happen to sit on the page).
+    This is critical for scanned PDFs where item y-ranges can be narrow,
+    causing relative fractions to chop off headings.
+
+    When *page_height* is None the legacy relative behaviour is used as
+    a fallback (fraction of item y-range).
+    """
     items = all_pages.get(page_num, [])
     if not items:
         return ""
-    ys = [get_y_center(b) for b, _, _ in items]
-    y_min, y_max = min(ys), max(ys)
-    cutoff = y_min + (y_max - y_min) * frac
+    if page_height is not None:
+        cutoff = page_height * frac
+    else:
+        ys = [get_y_center(b) for b, _, _ in items]
+        y_min, y_max = min(ys), max(ys)
+        cutoff = y_min + (y_max - y_min) * frac
     return " ".join(t for b, t, _ in items if get_y_center(b) <= cutoff).upper()
 
 
-def is_contents_page(all_pages: dict[int, list], page_num: int) -> bool:
-    return "CONTENTS" in top_band_text(all_pages, page_num, frac=0.25)
+def _y_cutoff(items: list, frac: float,
+              page_height: float | None = None) -> float:
+    """Compute the y-cutoff for the top *frac* of a page.
+
+    When *page_height* is available the cutoff is absolute (fraction of
+    page height).  Otherwise falls back to a fraction of the item y-range.
+    """
+    if page_height is not None:
+        return page_height * frac
+    ys = [get_y_center(b) for b, _, _ in items]
+    y_min, y_max = min(ys), max(ys)
+    return y_min + (y_max - y_min) * frac
+
+
+def is_contents_page(all_pages: dict[int, list], page_num: int,
+                     page_height: float | None = None) -> bool:
+    return "CONTENTS" in top_band_text(all_pages, page_num, frac=0.25,
+                                       page_height=page_height)
 
 
 def identify_pages(
     all_pages: dict[int, list],
+    page_height: float | None = None,
 ) -> tuple[int | None, int | None, int | None, list[int], bool]:
     """Return (income_page, balance_page, cashflow_page, notes_pages, is_filleted)."""
     income_page: int | None = None
@@ -627,9 +715,9 @@ def identify_pages(
             break
 
     for pnum in sorted(all_pages.keys()):
-        if is_contents_page(all_pages, pnum):
+        if is_contents_page(all_pages, pnum, page_height=page_height):
             continue
-        top = top_band_text(all_pages, pnum)
+        top = top_band_text(all_pages, pnum, page_height=page_height)
         full_u = page_text(all_pages, pnum).upper()
 
         # Income statement — first-match wins, skip if page declares filleted
@@ -700,6 +788,37 @@ def cluster_x_positions(xs: list[float], gap_threshold: float = 60) -> list[floa
     return [sum(c) / len(c) for c in clusters]
 
 
+def _detect_notes_column(items: list, page_width: float) -> float | None:
+    """Detect the x-position of the notes-reference column.
+
+    Notes columns contain small single-digit integers (1-30) clustered at
+    the same x-position, sitting between the label column and the financial
+    value columns.  Often headed by the word "Notes" or "Note".
+
+    Returns the centre x of the notes column, or None if not detected.
+    """
+    # Collect candidate note-ref items: single/double-digit integers in the
+    # middle zone (between labels at <40% and values at >55% of page width)
+    note_xs: list[float] = []
+    for bbox, text, _ in items:
+        if not is_number_text(text):
+            continue
+        val = parse_number(text)
+        if val is None or val != int(val) or val < 1 or val > 30:
+            continue
+        x = get_x_center(bbox)
+        if page_width * 0.35 < x < page_width * 0.55:
+            note_xs.append(x)
+
+    if len(note_xs) < 2:
+        return None
+
+    # Check they cluster tightly (within 30px spread)
+    if max(note_xs) - min(note_xs) < 30:
+        return sum(note_xs) / len(note_xs)
+    return None
+
+
 def parse_financial_page(
     all_pages: dict[int, list],
     page_width: float,
@@ -713,19 +832,35 @@ def parse_financial_page(
     if not items:
         return {}
 
+    # Build year-integer exclusion set early so it applies to clustering too.
+    year_ints: set[int] = set()
+    for y in (current_year, prior_year):
+        if isinstance(y, str) and y.isdigit():
+            year_ints.add(int(y))
+
+    # Detect the notes-reference column so we can exclude it from clustering
+    # and value extraction.  Note refs are small integers (1-30) in a narrow
+    # column between the labels and the financial value columns.
+    notes_col_x = _detect_notes_column(items, page_width)
+
     # Collect x-positions of all number-like text in the right portion.
-    # Skip small integers (|val| ≤ 50) — these are Note reference numbers
-    # or page numbers that sit between the label and data columns, creating
-    # spurious clusters that break column detection. Real financial values
-    # on income/balance/cashflow statements are virtually always > 50.
+    # Exclude: small integers (|val| ≤ 50) — note refs / page numbers;
+    #          year integers (2024, 2025) — column headers, not values;
+    #          items within ±25px of the detected notes column.
     number_xs: list[float] = []
     for bbox, text, _ in items:
         if is_number_text(text):
             val = parse_number(text)
-            if val is not None and abs(val) > 50:
-                x = get_x_center(bbox)
-                if x > page_width * 0.40:
-                    number_xs.append(x)
+            if val is None or abs(val) <= 50:
+                continue
+            if int(val) in year_ints:
+                continue
+            x = get_x_center(bbox)
+            if x <= page_width * 0.40:
+                continue
+            if notes_col_x is not None and abs(x - notes_col_x) < 25:
+                continue
+            number_xs.append(x)
 
     if not number_xs:
         return {}
@@ -748,6 +883,9 @@ def parse_financial_page(
     def classify_col(x: float) -> str:
         if x < page_width * 0.40:
             return "label"
+        # Items in the notes column are not financial values
+        if notes_col_x is not None and abs(x - notes_col_x) < 25:
+            return "note_ref"
         return "col1" if x < mid_boundary else "col2"
 
     row_items = []
@@ -774,12 +912,6 @@ def parse_financial_page(
             current.append(item)
     if current:
         clusters.append(current)
-
-    # Exclude the current/prior year integers from candidate values.
-    year_ints: set[int] = set()
-    for y in (current_year, prior_year):
-        if isinstance(y, str) and y.isdigit():
-            year_ints.add(int(y))
 
     result: dict[str, dict] = {}
     pending_label = ""
@@ -930,7 +1062,8 @@ def choose_label_maps(all_pages: dict[int, list]) -> tuple[dict, dict, str]:
 # Step 6 — Company metadata
 # ---------------------------------------------------------------------------
 
-def extract_metadata(all_pages: dict[int, list]) -> dict[str, str]:
+def extract_metadata(all_pages: dict[int, list],
+                     page_height: float | None = None) -> dict[str, str]:
     cover = page_text(all_pages, 1)
     reg_match = re.search(r"\b(\d{8})\b", cover)
     reg_number = reg_match.group(1) if reg_match else "Unknown"
@@ -943,7 +1076,7 @@ def extract_metadata(all_pages: dict[int, list]) -> dict[str, str]:
     # Best-effort company name: first top-band token of page 1 containing
     # LIMITED / PLC / LTD.
     company_name = "Unknown"
-    top1 = top_band_text(all_pages, 1, frac=0.25)
+    top1 = top_band_text(all_pages, 1, frac=0.25, page_height=page_height)
     m = re.search(r"([A-Z][A-Z0-9 &,\.'()\-]+(?:LIMITED|PLC|LTD|LLP))", top1)
     if m:
         company_name = m.group(1).strip()
@@ -1152,11 +1285,12 @@ def parse_pdf(pdf_path_or_bytes, preloaded=None) -> dict[str, Any]:
     re-running OCR when Part A and Part B are both needed.
     """
     if preloaded is not None:
-        all_pages, page_width, source = preloaded
+        all_pages, page_width, page_height, source = preloaded
     else:
-        all_pages, page_width, source = load_pages(pdf_path_or_bytes)
+        all_pages, page_width, page_height, source = load_pages(pdf_path_or_bytes)
 
-    income_page, balance_page, cashflow_page, notes_pages, is_filleted = identify_pages(all_pages)
+    income_page, balance_page, cashflow_page, notes_pages, is_filleted = identify_pages(
+        all_pages, page_height=page_height)
     current_year, prior_year = detect_years(
         all_pages, [income_page, balance_page, cashflow_page]
     )
@@ -1190,7 +1324,7 @@ def parse_pdf(pdf_path_or_bytes, preloaded=None) -> dict[str, Any]:
             )
         )
 
-    metadata = extract_metadata(all_pages)
+    metadata = extract_metadata(all_pages, page_height=page_height)
 
     if dialect == "ifrs":
         output = _assemble_output_ifrs(
@@ -1387,7 +1521,8 @@ def _expected_sections(classification: dict) -> dict[str, str]:
 # downstream in Stages 3-6 reads it via this dict, never by iterating tokens)
 # ---------------------------------------------------------------------------
 
-def build_page_text_table(all_pages: dict[int, list], source: str) -> dict[int, dict]:
+def build_page_text_table(all_pages: dict[int, list], source: str,
+                          page_height: float | None = None) -> dict[int, dict]:
     """Build the per-page text table used by Stages 3-6."""
     table: dict[int, dict] = {}
     for pnum, items in all_pages.items():
@@ -1403,6 +1538,7 @@ def build_page_text_table(all_pages: dict[int, list], source: str) -> dict[int, 
             "items": sorted_items,  # kept for top-band and y-sorted operations
             "source": source,
             "quality": quality,
+            "page_height": page_height,
         }
     return table
 
@@ -1439,9 +1575,8 @@ def _locator_b_hard_anchors(
             items = entry["items"]
             if not items:
                 continue
-            y_min = min(get_y_center(b) for b, _, _ in items)
-            y_max = max(get_y_center(b) for b, _, _ in items)
-            top_cutoff = y_min + (y_max - y_min) * 0.25
+            ph = entry.get("page_height")
+            top_cutoff = _y_cutoff(items, 0.25, page_height=ph)
             top_tokens = [t for b, t, _ in items if get_y_center(b) <= top_cutoff]
             top_text = " ".join(top_tokens)
 
@@ -1501,11 +1636,10 @@ def _locator_a_printed_toc(table: dict[int, dict]) -> list[dict]:
         if not items:
             continue
         # Inline top-band "CONTENTS" check
-        ys = [get_y_center(b) for b, _, _ in items]
-        if not ys:
+        if not items:
             continue
-        y_min, y_max = min(ys), max(ys)
-        cutoff = y_min + (y_max - y_min) * 0.25
+        ph = table[p].get("page_height")
+        cutoff = _y_cutoff(items, 0.25, page_height=ph)
         top = " ".join(t for b, t, _ in items if get_y_center(b) <= cutoff).upper()
         if "CONTENTS" in top:
             toc_pages.append(p)
@@ -1592,9 +1726,8 @@ def _locator_c_running_headers(
         items = entry["items"]
         if not items:
             continue
-        ys = [get_y_center(b) for b, _, _ in items]
-        y_min, y_max = min(ys), max(ys)
-        cutoff = y_min + (y_max - y_min) * 0.05  # top 5%
+        ph = entry.get("page_height")
+        cutoff = _y_cutoff(items, 0.05, page_height=ph)
         band_items = [
             (b, t, c) for b, t, c in items
             if get_y_center(b) <= cutoff
@@ -1650,9 +1783,8 @@ def _extract_company_name(table: dict[int, dict]) -> str | None:
     items = table[1]["items"]
     if not items:
         return None
-    ys = [get_y_center(b) for b, _, _ in items]
-    y_min, y_max = min(ys), max(ys)
-    cutoff = y_min + (y_max - y_min) * 0.30
+    ph = table[1].get("page_height")
+    cutoff = _y_cutoff(items, 0.30, page_height=ph)
     top_text = " ".join(t for b, t, _ in items if get_y_center(b) <= cutoff)
     m = re.search(
         r"([A-Z][A-Za-z0-9 &,\.'()\-]+?(?:LIMITED|PLC|LTD|LLP))",
@@ -1669,9 +1801,8 @@ def _locator_d_allcaps_first_line(table: dict[int, dict]) -> list[dict]:
         if not items:
             continue
         # Topmost y-band (top 5%)
-        y_min = min(get_y_center(b) for b, _, _ in items)
-        y_max = max(get_y_center(b) for b, _, _ in items)
-        band_cutoff = y_min + (y_max - y_min) * 0.05
+        ph = entry.get("page_height")
+        band_cutoff = _y_cutoff(items, 0.05, page_height=ph)
         top_band = [t for b, t, _ in items if get_y_center(b) <= band_cutoff]
         if not top_band:
             continue
@@ -1886,11 +2017,11 @@ def extract_sections(pdf_path_or_bytes, preloaded=None) -> dict[str, Any]:
     and optionally `notes` for multi-entity flags.
     """
     if preloaded is not None:
-        all_pages, _page_width, source = preloaded
+        all_pages, _page_width, page_height, source = preloaded
     else:
-        all_pages, _page_width, source = load_pages(pdf_path_or_bytes)
+        all_pages, _page_width, page_height, source = load_pages(pdf_path_or_bytes)
 
-    table = build_page_text_table(all_pages, source)
+    table = build_page_text_table(all_pages, source, page_height=page_height)
     classification = classify_filing(all_pages)
     expected = _expected_sections(classification)
     primary_range = detect_primary_range(table)
@@ -1935,21 +2066,243 @@ def extract_sections(pdf_path_or_bytes, preloaded=None) -> dict[str, Any]:
 
 
 # ===========================================================================
+# Employee headcount extraction from notes pages
+# ===========================================================================
+
+# Labels that indicate an employee headcount row (not cost rows).
+# True = total label, False = sub-category label (summed if no total found).
+_EMPLOYEE_HEADCOUNT_LABELS: dict[str, bool] = {
+    "total staff": True,
+    "total": True,
+    "average number": True,
+    "number of employees": True,
+    "average headcount": True,
+    # Sub-category labels
+    "production staff": False,
+    "production": False,
+    "management staff": False,
+    "management": False,
+    "administration staff": False,
+    "administration": False,
+    "administrative staff": False,
+    "sales staff": False,
+    "sales": False,
+    "warehouse staff": False,
+    "warehouse": False,
+    "office staff": False,
+    "operations": False,
+    "technical": False,
+    "directors": False,
+}
+
+
+def extract_employees_from_notes(
+    all_pages: dict[int, list],
+    page_width: float,
+    page_height: float | None,
+    notes_pages: list[int],
+    current_year: str,
+    prior_year: str,
+) -> dict[str, int] | None:
+    """Extract employee headcount from the Staff costs / Employees note.
+
+    Scans notes pages for the employee section, finds headcount rows
+    (not cost rows), and returns ``{year_str: count}``.  When the note
+    breaks headcount into sub-categories (Production, Management, etc.)
+    without a labelled total row, the sub-categories are summed.
+    """
+    if not notes_pages:
+        return None
+
+    # --- Step 1: find the notes page with employee data ---
+    employee_page = None
+    for pnum in notes_pages:
+        page_txt = page_text(all_pages, pnum).lower()
+        if any(kw in page_txt for kw in [
+            "staff costs", "average number of persons",
+            "average number of employees", "average headcount",
+        ]):
+            if "no." in page_txt or "average number" in page_txt:
+                employee_page = pnum
+                break
+        # Fallback: section headed "Employees" with a small integer nearby
+        if employee_page is None and "employees" in page_txt:
+            items = all_pages.get(pnum, [])
+            for poly, text, _ in items:
+                x = get_x_center(poly)
+                if x < page_width * 0.35 and text.lower().strip() == "employees":
+                    employee_page = pnum
+                    break
+            if employee_page is not None:
+                break
+
+    if employee_page is None:
+        return None
+
+    items = all_pages.get(employee_page, [])
+    if not items:
+        return None
+
+    items_sorted = sorted(items, key=lambda it: get_y_center(it[0]))
+
+    # --- Step 2: locate section boundaries ---
+    section_start_y = None
+    table_start_y = None
+    section_end_y = None
+
+    for poly, text, _ in items_sorted:
+        y = get_y_center(poly)
+        x = get_x_center(poly)
+        lower = text.lower().strip()
+
+        # Section header — must be left-aligned
+        if section_start_y is None:
+            if x < page_width * 0.35:
+                if lower in ("staff", "employees") or "staff costs" in lower:
+                    section_start_y = y
+                    continue
+
+        # Table start markers
+        if section_start_y is not None and table_start_y is None:
+            if lower in ("no.", "no", "average", "number"):
+                table_start_y = y
+                continue
+
+        # End of headcount section — left-aligned cost/wage heading
+        if section_start_y is not None and table_start_y is not None and section_end_y is None:
+            if x < page_width * 0.35:
+                if any(kw in lower for kw in [
+                    "aggregate", "payroll", "wages", "salaries",
+                    "incurred", "costs", "remuneration", "auditor",
+                ]):
+                    section_end_y = y
+                    break
+
+    if table_start_y is None:
+        if section_start_y is not None:
+            table_start_y = section_start_y
+        else:
+            return None
+
+    scan_start_y = section_start_y if section_start_y else table_start_y
+    if section_end_y is None:
+        section_end_y = scan_start_y + 300
+
+    # --- Step 3: collect items in the headcount region ---
+    year_ints: set[int] = set()
+    for yr in (current_year, prior_year):
+        if isinstance(yr, str) and yr.isdigit():
+            year_ints.add(int(yr))
+
+    table_items = [
+        (p, t, c) for p, t, c in items_sorted
+        if scan_start_y <= get_y_center(p) <= section_end_y
+    ]
+    if not table_items:
+        return None
+
+    # Cluster into rows by y-proximity (20px)
+    rows: list[list[tuple]] = []
+    current_row: list[tuple] = []
+    current_y = -999.0
+    for poly, text, conf in table_items:
+        y = get_y_center(poly)
+        if abs(y - current_y) > 20:
+            if current_row:
+                rows.append(current_row)
+            current_row = [(poly, text, conf)]
+            current_y = y
+        else:
+            current_row.append((poly, text, conf))
+    if current_row:
+        rows.append(current_row)
+
+    # --- Step 4: parse rows into label + numbers ---
+    total_values: list[float] | None = None
+    sub_totals: list[list[float]] = []
+
+    for row in rows:
+        label_parts: list[str] = []
+        numbers: list[float] = []
+        for poly, text, conf in sorted(row, key=lambda it: get_x_center(it[0])):
+            x = get_x_center(poly)
+            if is_number_text(text):
+                val = parse_number(text)
+                if val is not None and int(val) not in year_ints and 0 < val < 100000:
+                    numbers.append(val)
+            elif x < page_width * 0.50:
+                label_parts.append(text)
+
+        if not numbers:
+            continue
+
+        label = " ".join(label_parts).strip().lower()
+
+        # Match against headcount labels
+        is_total: bool | None = None
+        for pattern, is_total_flag in _EMPLOYEE_HEADCOUNT_LABELS.items():
+            if pattern in label:
+                is_total = is_total_flag
+                break
+
+        # Bare number row (no label) after sub-categories = total
+        if is_total is None and not label_parts and sub_totals:
+            is_total = True
+
+        if is_total is True:
+            total_values = numbers
+            break
+        elif is_total is False:
+            sub_totals.append(numbers)
+
+    # --- Step 5: resolve — prefer total, fall back to sum ---
+    result: dict[str, int] = {}
+    if total_values:
+        if len(total_values) >= 1:
+            result[current_year] = int(total_values[0])
+        if len(total_values) >= 2:
+            result[prior_year] = int(total_values[1])
+    elif sub_totals:
+        col1 = sum(nums[0] for nums in sub_totals if len(nums) >= 1)
+        col2 = sum(nums[1] for nums in sub_totals if len(nums) >= 2)
+        if col1 > 0:
+            result[current_year] = int(col1)
+        if col2 > 0:
+            result[prior_year] = int(col2)
+
+    return result if result else None
+
+
+# ===========================================================================
 # Combined entry point — one OCR pass, both outputs
 # ===========================================================================
 
 def parse_pdf_full(pdf_path_or_bytes) -> dict[str, Any]:
     """Run Part A and Part B against a single shared OCR/text-layer pass.
 
-    Returns a dict with keys `financials` (Part A output) and `sections`
-    (Part B output). This is what the main pipeline should call.
+    Returns a dict with keys `financials` (Part A output), `sections`
+    (Part B output), and `employees` (headcount from notes). This is
+    what the main pipeline should call.
     """
     preloaded = load_pages(pdf_path_or_bytes)
+    all_pages, page_width, page_height, source = preloaded
+
     financials = parse_pdf(None, preloaded=preloaded)
     sections = extract_sections(None, preloaded=preloaded)
+
+    # Employee extraction from notes pages
+    income_page, balance_page, cashflow_page, notes_pages, _ = \
+        identify_pages(all_pages, page_height=page_height)
+    current_year, prior_year = detect_years(
+        all_pages, [income_page, balance_page, cashflow_page])
+    employees = extract_employees_from_notes(
+        all_pages, page_width, page_height, notes_pages,
+        current_year, prior_year)
+
     return {
         "financials": financials,
         "sections": sections,
+        "employees": employees,
     }
 
 

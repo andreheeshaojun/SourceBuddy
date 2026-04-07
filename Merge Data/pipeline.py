@@ -210,10 +210,12 @@ IXBRL_TAG_MAP = {
     # --- Depreciation ---
     "DepreciationExpensePropertyPlantEquipment": "depreciation",       # FRS 102
     "DepreciationAmortisationImpairment": "depreciation",              # FRS 102 combined line
+    "DepreciationAmortisationExpense": "depreciation",                 # FRS 102 combined (common)
     "Depreciation": "depreciation",                                    # UK GAAP / generic
     "DepreciationOfPropertyPlantAndEquipment": "depreciation",         # IFRS
     "DepreciationExpense": "depreciation",                             # IFRS variant
     "DepreciationChargeOnTangibleFixedAssets": "depreciation",         # old UK GAAP
+    "IncreaseFromDepreciationChargeForYearPropertyPlantEquipment": "depreciation",  # PPE note total
 
     # --- Amortisation ---
     "AmortisationExpenseIntangibleAssets": "amortisation",             # FRS 102
@@ -221,6 +223,7 @@ IXBRL_TAG_MAP = {
     "Amortisation": "amortisation",                                    # generic
     "AmortisationExpense": "amortisation",                             # IFRS variant
     "AmortisationChargeOnIntangibleFixedAssets": "amortisation",       # old UK GAAP
+    "IncreaseFromAmortisationChargeForYearIntangibleAssets": "amortisation",  # intangibles note total
 
     # --- Operating profit ---
     "OperatingProfitLoss": "operating_profit",                         # FRS 102 core
@@ -418,7 +421,11 @@ IXBRL_TAG_MAP = {
 
     # --- Other operating income ---
     "OtherOperatingIncome": "other_operating_income",                         # FRS 102
+    "OtherOperatingIncomeFormat1": "other_operating_income",                  # FRS 102 Format 1
+    "OtherOperatingIncomeFormat2": "other_operating_income",                  # FRS 102 Format 2
     "OtherOperatingIncomeExpense": "other_operating_income",                  # IFRS
+    "IncomeFromSharesInGroupUndertakings": "income_from_group_undertakings",  # holding co income
+    "OtherInterestReceivableSimilarIncomeFinanceIncome": "finance_income",    # FRS 102 interest receivable variant
     "OtherIncome": "other_operating_income",                                  # variant
 
     # --- Finance income ---
@@ -642,8 +649,8 @@ def _extract_year(date_str):
 # Which canonical fields belong to which statement
 INCOME_STATEMENT_FIELDS = [
     "revenue", "cost_of_sales", "gross_profit", "distribution_costs",
-    "admin_expenses", "other_operating_income", "employee_costs",
-    "depreciation", "amortisation", "operating_profit",
+    "admin_expenses", "other_operating_income", "income_from_group_undertakings",
+    "employee_costs", "depreciation", "amortisation", "operating_profit",
     "finance_income", "finance_costs", "profit_before_tax",
     "tax_expense", "profit_after_tax",
 ]
@@ -1382,6 +1389,8 @@ _PDF_INCOME_FIELD_MAP = {
     "gross_profit": "gross_profit",
     "distribution_costs": "distribution_costs",
     "administrative_expenses": "admin_expenses",
+    "other_operating_income": "other_operating_income",
+    "operating_and_admin_expenses": "admin_expenses",
     "operating_profit": "operating_profit",
     "interest_payable": "finance_costs",
     "interest_receivable": "finance_income",
@@ -1437,6 +1446,8 @@ _PDF_BALANCE_FIELD_MAP = {
 _PDF_CASHFLOW_FIELD_MAP = {
     "operating_cash_flow": "operating_cash_flow",
     "net_cash_operating": "net_cash_operating",
+    "depreciation": "depreciation",
+    "amortisation": "amortisation",
     "tax_paid": "tax_paid",
     "capex_ppe": "capex_ppe",
     "capex_intangibles": "capex_intangibles",
@@ -1540,6 +1551,26 @@ def _normalise_pdf_extraction(pdf_output: dict) -> dict:
                 yr_str = str(yr)
                 years.add(yr_str)
                 result["cash_flow_statement"].setdefault(yr_str, {})[canonical] = val
+
+    # --- Notes: lift depreciation & amortisation into income_statement ---
+    # Notes are nested: notes.creditors.depreciation, notes.debtors.*, etc.
+    # Also check top-level notes for flat structures.
+    notes = financials.get("notes") or {}
+    _da_fields = {"depreciation", "amortisation"}
+    # Scan all nested note sections for D&A fields
+    for section_key, section_val in notes.items():
+        if isinstance(section_val, dict):
+            for field, year_vals in section_val.items():
+                if field in _da_fields and isinstance(year_vals, dict):
+                    for yr, val in year_vals.items():
+                        if val is None:
+                            continue
+                        yr_str = str(yr)
+                        years.add(yr_str)
+                        # Only set if not already present from cash flow statement
+                        row = result["income_statement"].setdefault(yr_str, {})
+                        if field not in row:
+                            row[field] = val
 
     # Ensure every year row exists in both statements (gap-fills rely on it)
     for yr in years:
@@ -1647,6 +1678,24 @@ def parse_pdf_multi(company_number, filings):
                 latest_sections = filing_sections
 
         normalised = _normalise_pdf_extraction(full.get("financials", {}))
+
+        # Merge employee headcount from notes into normalised result
+        emp_data = full.get("employees")
+        if emp_data and isinstance(emp_data, dict):
+            # Set display-level employee count (latest year)
+            sorted_years = sorted(emp_data.keys())
+            if sorted_years:
+                latest_emp = emp_data[sorted_years[-1]]
+                if latest_emp is not None and normalised.get("employees") is None:
+                    normalised["employees"] = int(latest_emp)
+            # Set employees_history
+            emp_hist = {yr: int(v) for yr, v in emp_data.items() if v is not None}
+            if emp_hist:
+                existing = normalised.get("employees_history", {})
+                for yr, val in emp_hist.items():
+                    if yr not in existing:
+                        existing[yr] = val
+                normalised["employees_history"] = existing
         # Accept if we have either an income statement or balance sheet —
         # filleted filings and some scanned PDFs may only deliver the BS.
         has_income = any(
@@ -1707,6 +1756,27 @@ def calculate_derived_metrics(data):
     # Run per-year pipeline: signs → gap-fills → derivations → validations
     data = compute(data)
 
+    # Tag EBITDA method in the derivation log
+    dl = data.get("derivation_log", {})
+    if isinstance(dl, dict):
+        ebitda_val = data.get("ebitda")
+        if ebitda_val is not None:
+            latest_year = None
+            for stmt_key in ("income_statement",):
+                stmt = data.get(stmt_key, {})
+                if stmt:
+                    latest_year = sorted(stmt.keys())[-1]
+            if latest_year:
+                yr_row = data.get("income_statement", {}).get(latest_year, {})
+                has_dep = yr_row.get("depreciation") is not None
+                has_amort = yr_row.get("amortisation") is not None
+                if not has_dep and not has_amort:
+                    dl["ebitda_method"] = "approximated (D&A unavailable, EBITDA = operating_profit)"
+                elif has_dep and not has_amort:
+                    dl["ebitda_method"] = "partial (amortisation unavailable, treated as 0)"
+                elif not has_dep and has_amort:
+                    dl["ebitda_method"] = "partial (depreciation unavailable, treated as 0)"
+
     # Run cross-period metrics: YoY growth and CAGR
     data = compute_cross_period(data)
 
@@ -1717,8 +1787,11 @@ def calculate_derived_metrics(data):
         data["ebitda_margin"] = round(ebitda / revenue, 4)
 
     fcf = data.get("fcf")
-    if fcf is not None and ebitda and ebitda != 0 and data.get("cash_conversion") is None:
-        data["cash_conversion"] = round(fcf / ebitda, 4)
+    if fcf is not None and ebitda and ebitda > 0 and data.get("cash_conversion") is None:
+        if fcf < 0:
+            data["cash_conversion"] = None
+        else:
+            data["cash_conversion"] = round(fcf / ebitda, 4)
 
     # Legacy CAGR from history dicts
     if data.get("revenue_cagr") is None:
@@ -1805,10 +1878,10 @@ def _build_write_payload(extracted, filing_format, last_accounts_date):
     if "revenue_cagr_5yr" in extracted and extracted["revenue_cagr_5yr"] is not None:
         columns["revenue_cagr_5y"] = extracted["revenue_cagr_5yr"]
 
+    # Always write all typed columns — use None to clear stale values from
+    # previous runs (e.g. cash_conversion that was incorrectly set).
     for key in _TYPED_COLUMN_KEYS:
-        val = extracted.get(key)
-        if val is not None:
-            columns[key] = val
+        columns[key] = extracted.get(key)
 
     meta_patch = {}
     for key in _METADATA_KEYS:

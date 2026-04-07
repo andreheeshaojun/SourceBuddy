@@ -105,7 +105,7 @@ def _tesseract_ocr(img):
     return items
 ```
 
-**Pass 1 — Top-band identification (cheap).** Render every page at 1x zoom, crop the top 30% only, OCR the crop. Scale coordinates up by 2x so they sit in the same coordinate space as pass 2. This is enough to identify financial-statement pages (headings live in the top 6%), detect contents pages (top 25%), and match Part B hard-anchor headings.
+**Pass 1 — Top-band identification (cheap).** Render every page at 1x zoom, crop the top 30% only, OCR the crop. Scale coordinates up by 2x so they sit in the same coordinate space as pass 2. This is enough to identify financial-statement pages (headings live in the top 15% of page height), detect contents pages (top 25%), and match Part B hard-anchor headings.
 
 ```python
 PASS1_TOP_FRAC = 0.30
@@ -138,6 +138,7 @@ for pnum in sorted(targets):
 
 all_pages = top_band_pages
 PAGE_WIDTH = doc[0].get_pixmap(matrix=mat2).width
+PAGE_HEIGHT = doc[0].get_pixmap(matrix=mat2).height
 doc.close()
 ```
 
@@ -145,9 +146,11 @@ doc.close()
 
 **Both paths produce the identical `all_pages` structure.** Pages outside the pass-2 set retain their top-band-only items — sufficient for Part B locators A/C/D/F which only read top-of-page text. Financial parsing and Locator B only ever touch pass-2 pages, so they see full 2x OCR output. All subsequent steps (page identification, column detection, row clustering, `parse_financial_page`) work unchanged regardless of which path was used.
 
+**`load_pages()` returns `(all_pages, page_width, page_height, source)`.** The `page_height` value is in the same coordinate space as item coordinates (PDF points for text-layer, 2x pixel-space for OCR). It is used by `top_band_text` and all internal y-cutoff calculations for **absolute** cutoff positioning (e.g. top 15% of page height) instead of relative fractions of item y-ranges. This is critical for scanned PDFs where OCR items may cluster in a narrow y-range, causing relative fractions to chop off headings that sit just below the company name banner.
+
 ### Step 2 — Identify financial pages (top-band match, first-wins)
 
-Scan each page's **top y-band only** (top ~6–8% of page height) for section titles. Full-page substring matching produces false positives and must not be used. Two verified failures from real filings:
+Scan each page's **top y-band only** (top ~15% of page height, using absolute `page_height` cutoff) for section titles. Full-page substring matching produces false positives and must not be used. Two verified failures from real filings:
 
 - **Heights Management Test 2:** full-page match tagged the Balance Sheet as an Income Statement because `"Profit and Loss Account"` appears as a reserves-line label in the equity section.
 - **John Lewis plc:** full-page match tagged the Auditor's Report (p110) as the Income Statement because the auditor's opinion references `"consolidated income statement"` in its body.
@@ -159,18 +162,27 @@ def get_y_center(bbox): return (bbox[0][1] + bbox[2][1]) / 2
 def page_text(page_num):
     return " ".join([t for _, t, _ in all_pages.get(page_num, [])])
 
-def top_band_text(page_num, frac=0.06):
-    """Return uppercased text from the top `frac` of the page only."""
+def top_band_text(page_num, frac=0.15, page_height=None):
+    """Return uppercased text from the top `frac` of the page.
+
+    When page_height is provided, the cutoff is absolute (page_height * frac).
+    This prevents scanned PDFs with narrow item y-ranges from chopping off
+    headings that sit just below the company name.  Falls back to relative
+    item y-range fraction when page_height is None.
+    """
     items = all_pages.get(page_num, [])
     if not items: return ""
-    ys = [get_y_center(b) for b, _, _ in items]
-    y_min, y_max = min(ys), max(ys)
-    cutoff = y_min + (y_max - y_min) * frac
+    if page_height is not None:
+        cutoff = page_height * frac
+    else:
+        ys = [get_y_center(b) for b, _, _ in items]
+        y_min, y_max = min(ys), max(ys)
+        cutoff = y_min + (y_max - y_min) * frac
     return " ".join(t for b, t, _ in items if get_y_center(b) <= cutoff).upper()
 
-def is_contents_page(page_num):
+def is_contents_page(page_num, page_height=None):
     """Detect TOC / Contents pages to exclude from page-type detection."""
-    return "CONTENTS" in top_band_text(page_num, frac=0.25)
+    return "CONTENTS" in top_band_text(page_num, frac=0.25, page_height=page_height)
 
 income_page = None
 balance_page = None
@@ -178,9 +190,9 @@ cashflow_page = None
 notes_pages = []
 
 for pnum in all_pages:
-    if is_contents_page(pnum):
+    if is_contents_page(pnum, page_height=PAGE_HEIGHT):
         continue
-    top = top_band_text(pnum)
+    top = top_band_text(pnum, page_height=PAGE_HEIGHT)
     full_u = page_text(pnum).upper()
 
     # First-match wins — do not let later pages overwrite
@@ -208,7 +220,7 @@ for pnum in all_pages:
 ```
 
 **Page detection rules:**
-- **Top-band only.** Use `top_band_text(p, frac=0.06)` for all title matching. The frac can be loosened to 0.08 if titles wrap across multiple lines, but do not exceed 0.12 — body text below that band causes the JL-style false match.
+- **Top-band only.** Use `top_band_text(p, page_height=PAGE_HEIGHT)` for all title matching. The default `frac=0.15` with absolute page_height gives a cutoff of ~15% of actual page height, which reliably captures both the company name banner and the statement heading underneath. For scanned PDFs, the old relative-fraction approach (fraction of item y-range) caused headings to be missed because OCR items clustered in a narrow y-range.
 - **First-match wins.** Once `income_page`, `balance_page`, or `cashflow_page` is set, do not overwrite it. Later pages may reference the income statement in their body text (auditor's report, directors' report, statement of comprehensive income) and would otherwise overwrite the true page.
 - **Skip Contents / TOC pages.** A TOC page lists "Balance Sheet" and "Income Statement" as entries and will false-match otherwise. Heights Management Test 2 page 2 is the verified failure case.
 - **Income Statement aliases:** "Profit and Loss Account", "Statement of Comprehensive Income", "Consolidated Income Statement".
@@ -246,8 +258,11 @@ The parsing engine uses spatial analysis of OCR bounding boxes to:
 
 **Key algorithms:**
 
+#### Notes-column detection and exclusion
+Many financial statements include a "Notes" reference column between the labels and the financial value columns. These are small integers (1-30) at a consistent x-position. Before column clustering, `_detect_notes_column()` looks for ≥2 small integers (1-30) in the zone 35%-55% of page width, clustered within 30px spread. When detected, items within ±25px of the notes column centre are tagged as `"note_ref"` and excluded from both column clustering and value extraction. Year-header integers (e.g. 2024, 2025) are also excluded from clustering to prevent spurious 3-cluster layouts.
+
 #### Column detection
-Number columns are detected by clustering the x-positions of all number-like text on the page. A gap threshold of 60px separates clusters. For 2-column layouts (Income Statement, Notes), the two clusters map directly to current year and prior year. For 4-column layouts (Balance Sheet with inner sub-totals and outer section totals), the left two clusters are current year and the right two are prior year.
+Number columns are detected by clustering the x-positions of all number-like text on the page (excluding note refs and year headers). A gap threshold of 60px separates clusters. For 2-column layouts (Income Statement, Notes), the two clusters map directly to current year and prior year. For 4-column layouts (Balance Sheet with inner sub-totals and outer section totals), the left two clusters are current year and the right two are prior year.
 
 ```python
 def cluster_x_positions(xs, gap_threshold=60):
@@ -328,21 +343,37 @@ INCOME_LABEL_MAP_UKGAAP = {
     "revenue": "turnover",
     "cost of sales": "cost_of_sales",
     "gross profit": "gross_profit",
+    "gross loss": "gross_profit",
     "distribution costs": "distribution_costs",
     "administrative expenses": "administrative_expenses",
     "admin expenses": "administrative_expenses",
     "other operating income": "other_operating_income",
     "operating profit": "operating_profit",
+    "operating loss": "operating_profit",
+    "operating (loss)/ profit": "operating_profit",
+    "operating profit/(loss)": "operating_profit",
+    "(loss)/profit from operations": "operating_profit",
+    "profit/(loss) from operations": "operating_profit",
     "interest receivable": "interest_receivable",
     "interest payable": "interest_payable",
     "finance income": "interest_receivable",
     "finance cost": "interest_payable",
     "profit before tax": "profit_before_taxation",
+    "loss before tax": "profit_before_taxation",
+    "(loss)/profit before tax": "profit_before_taxation",
+    "profit/(loss) before tax": "profit_before_taxation",
     "tax on profit": "tax_on_profit",
+    "tax on loss": "tax_on_profit",
     "taxation": "tax_on_profit",
+    "tax credit": "tax_on_profit",
     "profit for the financial year": "profit_for_financial_year",
+    "loss for the financial year": "profit_for_financial_year",
     "profit for the year": "profit_for_financial_year",
+    "loss for the year": "profit_for_financial_year",
+    "(loss)/profit for the year": "profit_for_financial_year",
+    "profit/(loss) for the year": "profit_for_financial_year",
     "profit after tax": "profit_for_financial_year",
+    "loss after tax": "profit_for_financial_year",
 }
 ```
 
@@ -380,16 +411,26 @@ INCOME_LABEL_MAP_IFRS = {
     "administrative expenses": "administrative_expenses",
     "operating profit": "operating_profit",
     "operating loss": "operating_profit",
+    "operating (loss)/ profit": "operating_profit",
+    "operating profit/(loss)": "operating_profit",
+    "(loss)/profit from operations": "operating_profit",
+    "profit/(loss) from operations": "operating_profit",
     "finance income": "finance_income",
     "finance cost": "finance_costs",
     "finance costs": "finance_costs",
     "profit before tax": "profit_before_taxation",
     "loss before tax": "profit_before_taxation",
+    "(loss)/profit before tax": "profit_before_taxation",
+    "profit/(loss) before tax": "profit_before_taxation",
     "taxation": "taxation",
     "tax expense": "taxation",
+    "tax credit": "taxation",
     "profit for the financial year": "profit_for_financial_year",
     "profit for the year": "profit_for_financial_year",
     "loss for the financial year": "profit_for_financial_year",
+    "loss for the year": "profit_for_financial_year",
+    "(loss)/profit for the year": "profit_for_financial_year",
+    "profit/(loss) for the year": "profit_for_financial_year",
 }
 ```
 
@@ -548,7 +589,7 @@ CASHFLOW_LABEL_MAP = {
 }
 ```
 
-**Why no depreciation/amortisation in this map:** these lines do appear on the cash flow statement as indirect-method add-backs. Including them here would cause `parse_financial_page` to match them (the cash flow page) and store the add-back value under `depreciation` / `amortisation`, silently overwriting or confirming the income statement values. In practice the add-back equals the income-statement value, so the numbers would agree — but the collision is a footgun. Safer to omit.
+**Depreciation & amortisation add-backs:** D&A labels are included at the top of `CASHFLOW_LABEL_MAP` (e.g. "depreciation of tangible fixed assets" → `depreciation`, "amortisation of intangible assets" → `amortisation`). These values are extracted from the cash flow statement's indirect-method add-back section and flow through `_normalise_pdf_extraction` into the `cash_flow_statement` year rows. The derivation layer in `financial_computations.py` uses them for EBITDA = operating_profit + |depreciation| + |amortisation|. When D&A are unavailable (common for scanned PDFs where the cash flow page is not detected), a fallback approximation fires: EBITDA ≈ operating_profit, logged as `ebitda_method: "approximated (D&A unavailable)"`.
 
 **Sanity-check relationships:**
 - `operating_cash_flow + net_cash_investing + net_cash_financing ≈ net_change_cash` (allow ±1 rounding)
@@ -570,6 +611,14 @@ NOTES_LABEL_MAP = {
     "wages and salaries": "wages_and_salaries",
     "social security costs": "social_security_costs",
     "pension costs": "pension_costs",
+    # Depreciation & Amortisation (from tangible/intangible fixed asset notes)
+    "depreciation charge for the year": "depreciation",
+    "depreciation charged in the year": "depreciation",
+    "depreciation for the year": "depreciation",
+    "charge for the year": "depreciation",
+    "amortisation charge for the year": "amortisation",
+    "amortisation charged in the year": "amortisation",
+    "amortisation for the year": "amortisation",
 }
 ```
 
@@ -636,6 +685,18 @@ output = {
 print(json.dumps(output, indent=2))
 ```
 
+### Step 8 — Extract employee headcount from notes
+
+Employee counts are extracted separately from the financial tables because they appear in a different format: a prose sentence ("The average number of persons employed...") followed by a simple headcount table, often broken into sub-categories.
+
+**`extract_employees_from_notes()`** in `pdf_parser.py`:
+1. **Find employee page** — scan notes pages for keywords "staff costs", "average number of persons", "employees"
+2. **Locate section boundaries** — find the left-aligned heading ("Staff costs" or "Employees"), then the "No." marker or "average"/"number" as table start, then cost/wage keywords as section end
+3. **Parse headcount rows** — match labels against `_EMPLOYEE_HEADCOUNT_LABELS` (total vs sub-category)
+4. **Resolve** — prefer a total row if found; otherwise sum sub-category rows (handles filings that break headcount into Production, Management, etc. without a labelled total)
+
+**`parse_pdf_full()`** now returns 3 keys: `financials`, `sections`, and `employees` (a `{year_str: int}` dict). The pipeline merges this into `employees` (display) and `employees_history` (JSONB).
+
 ### Step 8 — Sanity checks
 
 After generating the JSON, verify:
@@ -688,13 +749,33 @@ def parse_financial_page(page_num, label_map):
     if not items:
         return {}
 
-    # Collect x-positions of all number-like text in the right portion
+    # Build year-integer exclusion set early so it applies to clustering too.
+    year_ints = set()
+    for y in (current_year, prior_year):
+        if isinstance(y, str) and y.isdigit():
+            year_ints.add(int(y))
+
+    # Detect and exclude notes-reference column (small ints 1-30 at
+    # consistent x between labels and values).
+    notes_col_x = _detect_notes_column(items, PAGE_WIDTH)
+
+    # Collect x-positions of all number-like text in the right portion.
+    # Exclude: small ints (|val|<=50), year headers, notes-column items.
     number_xs = []
     for bbox, text, conf in items:
-        if is_number_text(text) and parse_number(text) is not None:
-            x = get_x_center(bbox)
-            if x > PAGE_WIDTH * 0.40:
-                number_xs.append(x)
+        if not is_number_text(text):
+            continue
+        val = parse_number(text)
+        if val is None or abs(val) <= 50:
+            continue
+        if int(val) in year_ints:
+            continue
+        x = get_x_center(bbox)
+        if x <= PAGE_WIDTH * 0.40:
+            continue
+        if notes_col_x is not None and abs(x - notes_col_x) < 25:
+            continue
+        number_xs.append(x)
 
     if not number_xs:
         return {}
@@ -720,6 +801,8 @@ def parse_financial_page(page_num, label_map):
     def classify_col(x):
         if x < PAGE_WIDTH * 0.40:
             return "label"
+        if notes_col_x is not None and abs(x - notes_col_x) < 25:
+            return "note_ref"
         return "col1" if x < mid_boundary else "col2"
 
     # Build row items with classification

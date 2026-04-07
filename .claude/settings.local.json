@@ -56,7 +56,11 @@
       "Bash(powershell:*)",
       "Bash(powershell.exe:*)",
       "Bash(winget install:*)",
-      "Bash(export PATH=\"/c/Program Files/Tesseract-OCR:$PATH\")"
+      "Bash(export PATH=\"/c/Program Files/Tesseract-OCR:$PATH\")",
+      "Bash(wc -l \"/c/Users/Andre Hee/Desktop/SourceBuddy\"/**/*.py)",
+      "Bash(\"/c/Program Files/Tesseract-OCR/tesseract.exe\" --version)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
     ]
   }
 }

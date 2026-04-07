@@ -138,6 +138,20 @@ _GAP_FILLS: list[dict] = [
         "note": "gap_fill: cost_of_sales = gross_profit - revenue",
     },
     {
+        # Revenue fallback for holding companies / non-trading entities where
+        # TurnoverRevenue is nil/absent but other operating income or group
+        # income exists. Sum all non-zero income sources.
+        "target": "revenue",
+        "fn": lambda r: (
+            None if (_g(r, "other_operating_income") is None
+                     and _g(r, "income_from_group_undertakings") is None)
+            else ((_g(r, "other_operating_income") or 0)
+                  + (_g(r, "income_from_group_undertakings") or 0))
+            or None  # avoid setting revenue=0
+        ),
+        "note": "gap_fill: revenue = other_operating_income + income_from_group_undertakings (non-trading entity)",
+    },
+    {
         "target": "operating_profit",
         "fn": lambda r: _sum_with_optional(
             r,
@@ -294,23 +308,15 @@ _DERIVATIONS: list[dict] = [
         "fn": lambda r: _safe_div(_g(r, "profit_after_tax"), _g(r, "revenue")),
     },
     {
+        # Primary: EBITDA = operating_profit + |depreciation| + |amortisation|.
+        # Treats missing D&A as 0 — if depreciation or amortisation is None,
+        # it contributes 0 rather than blocking the entire calculation.
         "name": "ebitda",
-        "requires": ["operating_profit", "depreciation", "amortisation"],
+        "requires": ["operating_profit"],
         "fn": lambda r: (
             _g(r, "operating_profit")
-            + abs(_g(r, "depreciation"))
-            + abs(_g(r, "amortisation"))
-        ),
-    },
-    {
-        # Fallback: use operating_loss when operating_profit is absent
-        "name": "ebitda",
-        "requires": ["operating_loss", "depreciation", "amortisation"],
-        "fn": lambda r: (
-            None if _g(r, "operating_profit") is not None
-            else _g(r, "operating_loss")
-            + abs(_g(r, "depreciation"))
-            + abs(_g(r, "amortisation"))
+            + abs(_g(r, "depreciation") or 0)
+            + abs(_g(r, "amortisation") or 0)
         ),
     },
     {
@@ -358,7 +364,7 @@ _DERIVATIONS: list[dict] = [
         "requires": ["fcf", "ebitda"],
         "fn": lambda r: (
             None if _g(r, "ebitda") is None or _g(r, "ebitda") <= 0
-            else 0 if _g(r, "fcf") is not None and _g(r, "fcf") < 0
+            else None if _g(r, "fcf") is not None and _g(r, "fcf") < 0
             else _safe_div(_g(r, "fcf"), _g(r, "ebitda"))
         ),
     },
